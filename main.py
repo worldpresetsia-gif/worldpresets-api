@@ -11,40 +11,34 @@ from google.genai import types
 app = FastAPI(title="World Presets API")
 
 API_KEY = os.getenv("GEMINI_API_KEY")
+GUMROAD_TOKEN = os.getenv("GUMROAD_ACCESS_TOKEN")
 client = None
 if API_KEY:
     client = genai.Client(api_key=API_KEY)
 
+# Base de datos temporal en memoria (luego la pasamos a Supabase)
+USUARIOS_DB = {}
+
 class PresetRequest(BaseModel):
     prompt: str
     consola: str
-    licencia: str = None
+    email: str = None
 
-def verificar_licencia(license_key):
-    """Verifica la licencia con la API de Gumroad."""
-    if license_key == "test":
-        return True, "Licencia de prueba aceptada"
+def verificar_limite_y_actualizar(email):
+    """Controla cuántas generaciones lleva el usuario y le suma 1."""
+    if email == "test@test.com":
+        return True, "Usuario de prueba aceptado (Ilimitado)"
+
+    if email not in USUARIOS_DB:
+        USUARIOS_DB[email] = {"usadas": 0, "limite": 10}
+
+    datos_usuario = USUARIOS_DB[email]
     
-    product_id = os.getenv("GUMROAD_PRODUCT_ID")
-    if not product_id:
-        return True, "Bypass: Falta configurar GUMROAD_PRODUCT_ID"
-        
-    url = "https://api.gumroad.com/v2/licenses/verify"
-    data = urllib.parse.urlencode({
-        "product_id": product_id,
-        "license_key": license_key
-    }).encode('utf-8')
+    if datos_usuario["usadas"] >= datos_usuario["limite"]:
+        return False, f"Límite de prueba alcanzado ({datos_usuario['limite']} generaciones). Compra la versión completa."
     
-    req = urllib.request.Request(url, data=data, method='POST')
-    try:
-        with urllib.request.urlopen(req) as response:
-            res_data = json.loads(response.read().decode('utf-8'))
-            if res_data.get("success"):
-                return True, "Licencia válida"
-            else:
-                return False, "Licencia inválida o reembolsada"
-    except Exception as e:
-        return False, f"Error al verificar licencia: {e}"
+    datos_usuario["usadas"] += 1
+    return True, f"Generación {datos_usuario['usadas']} de {datos_usuario['limite']} permitida"
 
 def obtener_modelos_candidatos():
     try:
@@ -79,15 +73,13 @@ def generar_preset(req: PresetRequest):
     if not client:
         raise HTTPException(status_code=500, detail="API Key no configurada")
     
-    # 1. Verificamos la licencia
-    if not req.licencia:
-        raise HTTPException(status_code=403, detail="Se requiere una licencia para generar presets")
+    if not req.email:
+        raise HTTPException(status_code=403, detail="Se requiere el email de compra")
         
-    licencia_valida, msj = verificar_licencia(req.licencia)
-    if not licencia_valida:
+    valido, msj = verificar_limite_y_actualizar(req.email)
+    if not valido:
         raise HTTPException(status_code=403, detail=msj)
     
-    # 2. Preparamos el prompt
     es_bateria = es_solicitud_de_bateria(req.prompt)
     if es_bateria:
         reglas = "Genera 8 presets: Kick, Snare, HiHat, Tom1, Tom2, Tom3, OH-L, OH-R."
@@ -100,7 +92,6 @@ Usuario busca: "{req.prompt}" para {req.consola}.
 Devuelve SOLO un array JSON con los objetos correspondientes.
 Cada objeto debe tener: nombre_variacion, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
-    # 3. Generamos con IA (con reintentos)
     modelos = obtener_modelos_candidatos()
     ultimo_error = ""
 
@@ -111,7 +102,7 @@ Cada objeto debe tener: nombre_variacion, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2
                 contents=prompt_sistema,
                 config=types.GenerateContentConfig(response_mime_type="application/json"),
             )
-            return {"status": "ok", "modelo_usado": modelo, "datos": response.text}
+            return {"status": "ok", "modelo_usado": modelo, "mensaje_limite": msj, "datos": response.text}
         except Exception as e:
             ultimo_error = str(e)
             continue 
