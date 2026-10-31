@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import random
 import urllib.request
 import urllib.parse
 from fastapi import FastAPI, HTTPException
@@ -13,18 +14,66 @@ app = FastAPI(title="World Presets API")
 API_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 
 client = None
 if API_KEY:
     client = genai.Client(api_key=API_KEY)
+
+# Diccionario temporal en memoria para guardar los códigos de verificación
+codigos_pendientes = {}
+
+class EmailRequest(BaseModel):
+    email: str
+
+class CodigoRequest(BaseModel):
+    email: str
+    codigo: str
 
 class PresetRequest(BaseModel):
     prompt: str
     consola: str
     email: str = None
 
+def enviar_email_brevo(destinatario, codigo):
+    """Envía un correo real usando la API de Brevo."""
+    if not BREVO_API_KEY:
+        print("Falta BREVO_API_KEY en las variables de entorno")
+        return False
+    
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json"
+    }
+    data = {
+        "sender": {"name": "World Presets", "email": "worldpresets.ia@gmail.com"},
+        "to": [{"email": destinatario}],
+        "subject": "Tu código de verificación - World Presets",
+        "htmlContent": f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; color: #333;">
+                <h2>Bienvenido a World Presets IA</h2>
+                <p>Estás a un paso de generar tus propios presets.</p>
+                <p>Tu código de verificación es: <strong style="font-size: 24px; color: #00e5ff;">{codigo}</strong></p>
+                <p>Ingresalo en el programa para comenzar a crear.</p>
+                <br>
+                <p style="font-size: 12px; color: #888;">Si no solicitaste este código, podés ignorar este mensaje.</p>
+            </body>
+        </html>
+        """
+    }
+    
+    req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
+    try:
+        with urllib.request.urlopen(req) as response:
+            return True
+    except Exception as e:
+        print(f"Error al enviar email por Brevo: {e}")
+        return False
+
 def verificar_limite_y_actualizar(email):
-    """Controla cuántas generaciones lleva el usuario en Supabase y le suma 1."""
     if email == "test@test.com":
         return True, "Usuario de prueba aceptado (Ilimitado)"
 
@@ -38,7 +87,6 @@ def verificar_limite_y_actualizar(email):
         "Prefer": "return=representation"
     }
 
-    # 1. Buscamos si el usuario ya existe en Supabase
     url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
     req_get = urllib.request.Request(url_get, headers=headers)
     
@@ -49,12 +97,10 @@ def verificar_limite_y_actualizar(email):
         return False, f"Error conectando a Supabase: {e}"
 
     if len(data) > 0:
-        # El usuario ya existe
         usuario = data[0]
         if usuario["usadas"] >= usuario["limite"]:
-            return False, f"Límite de prueba alcanzado ({usuario['limite']} generaciones). Compra la versión completa."
+            return False, f"Límite alcanzado ({usuario['limite']} generaciones)."
         
-        # Actualizamos el contador
         nuevas_usadas = usuario["usadas"] + 1
         url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
         body_patch = json.dumps({"usadas": nuevas_usadas}).encode('utf-8')
@@ -62,7 +108,6 @@ def verificar_limite_y_actualizar(email):
         urllib.request.urlopen(req_patch)
         return True, f"Generación {nuevas_usadas} de {usuario['limite']} permitida"
     else:
-        # El usuario es nuevo, lo creamos con 10 de límite
         url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
         body_post = json.dumps({"email": email, "usadas": 1, "limite": 10}).encode('utf-8')
         req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
@@ -95,7 +140,25 @@ def es_solicitud_de_bateria(texto):
 
 @app.get("/")
 def read_root():
-    return {"status": "Portero listo y conectado a Supabase"}
+    return {"status": "Portero listo y conectado a Supabase y Brevo"}
+
+@app.post("/enviar-codigo")
+def enviar_codigo(req: EmailRequest):
+    codigo = str(random.randint(100000, 999999))
+    codigos_pendientes[req.email] = codigo
+    
+    if enviar_email_brevo(req.email, codigo):
+        return {"status": "ok", "mensaje": "Código enviado al correo"}
+    else:
+        raise HTTPException(status_code=500, detail="Error al enviar el correo electrónico")
+
+@app.post("/verificar-codigo")
+def verificar_codigo(req: CodigoRequest):
+    if req.email in codigos_pendientes and codigos_pendientes[req.email] == req.codigo:
+        del codigos_pendientes[req.email] # El código se borra después de usarlo
+        return {"status": "ok", "mensaje": "Verificado correctamente"}
+    else:
+        raise HTTPException(status_code=400, detail="Código incorrecto o expirado")
 
 @app.post("/generar")
 def generar_preset(req: PresetRequest):
