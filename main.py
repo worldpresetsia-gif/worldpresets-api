@@ -38,6 +38,9 @@ def obtener_modelos_candidatos():
     except Exception:
         return ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"]
 
+def es_solicitud_de_bateria(texto):
+    return any(p in texto.lower() for p in ["bateria","batería","drumkit","drums","kit"])
+
 @app.get("/")
 def read_root():
     return {"status": "Portero listo y conectado a la IA"}
@@ -46,10 +49,17 @@ def read_root():
 def generar_preset(req: PresetRequest):
     if not client:
         raise HTTPException(status_code=500, detail="API Key no configurada")
+    
+    es_bateria = es_solicitud_de_bateria(req.prompt)
+    if es_bateria:
+        reglas = "Genera 8 presets: Kick, Snare, HiHat, Tom1, Tom2, Tom3, OH-L, OH-R."
+    else:
+        reglas = "Genera 3 variaciones."
         
     prompt_sistema = f"""Eres ingeniero de sonido experto en consolas Behringer/Midas.
 Usuario busca: "{req.prompt}" para {req.consola}.
-Devuelve SOLO un array JSON con 3 objetos.
+{reglas}
+Devuelve SOLO un array JSON con los objetos correspondientes.
 Cada objeto debe tener: nombre_variacion, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
     modelos = obtener_modelos_candidatos()
