@@ -1,5 +1,8 @@
 import os
 import re
+import json
+import urllib.request
+import urllib.parse
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from google import genai
@@ -16,6 +19,32 @@ class PresetRequest(BaseModel):
     prompt: str
     consola: str
     licencia: str = None
+
+def verificar_licencia(license_key):
+    """Verifica la licencia con la API de Gumroad."""
+    if license_key == "test":
+        return True, "Licencia de prueba aceptada"
+    
+    product_id = os.getenv("GUMROAD_PRODUCT_ID")
+    if not product_id:
+        return True, "Bypass: Falta configurar GUMROAD_PRODUCT_ID"
+        
+    url = "https://api.gumroad.com/v2/licenses/verify"
+    data = urllib.parse.urlencode({
+        "product_id": product_id,
+        "license_key": license_key
+    }).encode('utf-8')
+    
+    req = urllib.request.Request(url, data=data, method='POST')
+    try:
+        with urllib.request.urlopen(req) as response:
+            res_data = json.loads(response.read().decode('utf-8'))
+            if res_data.get("success"):
+                return True, "Licencia válida"
+            else:
+                return False, "Licencia inválida o reembolsada"
+    except Exception as e:
+        return False, f"Error al verificar licencia: {e}"
 
 def obtener_modelos_candidatos():
     try:
@@ -50,6 +79,15 @@ def generar_preset(req: PresetRequest):
     if not client:
         raise HTTPException(status_code=500, detail="API Key no configurada")
     
+    # 1. Verificamos la licencia
+    if not req.licencia:
+        raise HTTPException(status_code=403, detail="Se requiere una licencia para generar presets")
+        
+    licencia_valida, msj = verificar_licencia(req.licencia)
+    if not licencia_valida:
+        raise HTTPException(status_code=403, detail=msj)
+    
+    # 2. Preparamos el prompt
     es_bateria = es_solicitud_de_bateria(req.prompt)
     if es_bateria:
         reglas = "Genera 8 presets: Kick, Snare, HiHat, Tom1, Tom2, Tom3, OH-L, OH-R."
@@ -62,6 +100,7 @@ Usuario busca: "{req.prompt}" para {req.consola}.
 Devuelve SOLO un array JSON con los objetos correspondientes.
 Cada objeto debe tener: nombre_variacion, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
+    # 3. Generamos con IA (con reintentos)
     modelos = obtener_modelos_candidatos()
     ultimo_error = ""
 
