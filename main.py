@@ -17,7 +17,7 @@ class PresetRequest(BaseModel):
     consola: str
     licencia: str = None
 
-def obtener_mejor_modelo():
+def obtener_modelos_candidatos():
     try:
         candidatos = []
         for m in client.models.list():
@@ -31,13 +31,12 @@ def obtener_mejor_modelo():
             es_estable = 1 if "preview" not in nombre.lower() else 0
             candidatos.append((es_estable, version, nombre))
         
-        if not candidatos:
-            return "gemini-flash-latest"
-        
         candidatos.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        return candidatos[0][2]
+        lista_final = [c[2] for c in candidatos]
+        lista_final.append("gemini-flash-latest") 
+        return lista_final
     except Exception:
-        return "gemini-flash-latest"
+        return ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"]
 
 @app.get("/")
 def read_root():
@@ -53,13 +52,19 @@ Usuario busca: "{req.prompt}" para {req.consola}.
 Devuelve SOLO un array JSON con 3 objetos.
 Cada objeto debe tener: nombre_variacion, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
-    try:
-        modelo_elegido = obtener_mejor_modelo()
-        response = client.models.generate_content(
-            model=modelo_elegido,
-            contents=prompt_sistema,
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
-        )
-        return {"status": "ok", "modelo_usado": modelo_elegido, "datos": response.text}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    modelos = obtener_modelos_candidatos()
+    ultimo_error = ""
+
+    for modelo in modelos:
+        try:
+            response = client.models.generate_content(
+                model=modelo,
+                contents=prompt_sistema,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            return {"status": "ok", "modelo_usado": modelo, "datos": response.text}
+        except Exception as e:
+            ultimo_error = str(e)
+            continue 
+            
+    raise HTTPException(status_code=500, detail=f"Todos los modelos fallaron. Último error: {ultimo_error}")
