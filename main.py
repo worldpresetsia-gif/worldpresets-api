@@ -11,13 +11,12 @@ from google.genai import types
 app = FastAPI(title="World Presets API")
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-GUMROAD_TOKEN = os.getenv("GUMROAD_ACCESS_TOKEN")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
+
 client = None
 if API_KEY:
     client = genai.Client(api_key=API_KEY)
-
-# Base de datos temporal en memoria (luego la pasamos a Supabase)
-USUARIOS_DB = {}
 
 class PresetRequest(BaseModel):
     prompt: str
@@ -25,20 +24,50 @@ class PresetRequest(BaseModel):
     email: str = None
 
 def verificar_limite_y_actualizar(email):
-    """Controla cuántas generaciones lleva el usuario y le suma 1."""
+    """Controla cuántas generaciones lleva el usuario en Supabase y le suma 1."""
     if email == "test@test.com":
         return True, "Usuario de prueba aceptado (Ilimitado)"
 
-    if email not in USUARIOS_DB:
-        USUARIOS_DB[email] = {"usadas": 0, "limite": 10}
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return False, "Faltan configurar las variables de Supabase en Render"
 
-    datos_usuario = USUARIOS_DB[email]
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+
+    # 1. Buscamos si el usuario ya existe en Supabase
+    url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+    req_get = urllib.request.Request(url_get, headers=headers)
     
-    if datos_usuario["usadas"] >= datos_usuario["limite"]:
-        return False, f"Límite de prueba alcanzado ({datos_usuario['limite']} generaciones). Compra la versión completa."
-    
-    datos_usuario["usadas"] += 1
-    return True, f"Generación {datos_usuario['usadas']} de {datos_usuario['limite']} permitida"
+    try:
+        with urllib.request.urlopen(req_get) as response:
+            data = json.loads(response.read().decode('utf-8'))
+    except Exception as e:
+        return False, f"Error conectando a Supabase: {e}"
+
+    if len(data) > 0:
+        # El usuario ya existe
+        usuario = data[0]
+        if usuario["usadas"] >= usuario["limite"]:
+            return False, f"Límite de prueba alcanzado ({usuario['limite']} generaciones). Compra la versión completa."
+        
+        # Actualizamos el contador
+        nuevas_usadas = usuario["usadas"] + 1
+        url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+        body_patch = json.dumps({"usadas": nuevas_usadas}).encode('utf-8')
+        req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
+        urllib.request.urlopen(req_patch)
+        return True, f"Generación {nuevas_usadas} de {usuario['limite']} permitida"
+    else:
+        # El usuario es nuevo, lo creamos con 10 de límite
+        url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
+        body_post = json.dumps({"email": email, "usadas": 1, "limite": 10}).encode('utf-8')
+        req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
+        urllib.request.urlopen(req_post)
+        return True, "Generación 1 de 10 permitida (Nuevo usuario registrado)"
 
 def obtener_modelos_candidatos():
     try:
@@ -66,7 +95,7 @@ def es_solicitud_de_bateria(texto):
 
 @app.get("/")
 def read_root():
-    return {"status": "Portero listo y conectado a la IA"}
+    return {"status": "Portero listo y conectado a Supabase"}
 
 @app.post("/generar")
 def generar_preset(req: PresetRequest):
@@ -74,7 +103,7 @@ def generar_preset(req: PresetRequest):
         raise HTTPException(status_code=500, detail="API Key no configurada")
     
     if not req.email:
-        raise HTTPException(status_code=403, detail="Se requiere el email de compra")
+        raise HTTPException(status_code=403, detail="Se requiere el email para generar")
         
     valido, msj = verificar_limite_y_actualizar(req.email)
     if not valido:
