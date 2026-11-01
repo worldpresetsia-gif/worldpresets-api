@@ -151,8 +151,10 @@ IMPORTANTE: Debes aplicar ganancias de EQ notorias. No uses +0.0 dB.
 Usa valores entre -6.0 dB y +6.0 dB para las bandas (eq1_g, eq2_g, eq3_g, eq4_g). 
 Si recortas, usa al menos -3.0 dB. Si realzas, usa al menos +2.0 dB. 
 Haz que el sonido cambie drásticamente para bien.
+Además, decide si el instrumento necesita Gate, Compresor y EQ.
+Si es un instrumento de cola larga o suave (piano, pad, voz), pon gate_on en false. Si es rítmico (batería, bajo, guitarra), pon true.
 Devuelve SOLO un array JSON con los objetos correspondientes.
-Cada objeto debe tener: nombre_variacion, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
+Cada objeto debe tener: nombre_variacion, gate_on (true/false), comp_on (true/false), eq_on (true/false), eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
     modelos = obtener_modelos_candidatos()
     ultimo_error = ""
