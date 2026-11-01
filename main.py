@@ -144,17 +144,50 @@ def generar_preset(req: PresetRequest):
     else:
         reglas = "Genera 3 variaciones."
         
-    prompt_sistema = f"""Eres ingeniero de sonido experto en consolas Behringer/Midas.
+    prompt_sistema = f"""Eres un Ingeniero de Mezcla Senior con 30 años de experiencia en consolas Behringer/Midas.
 Usuario busca: "{req.prompt}" para {req.consola}.
 {reglas}
-IMPORTANTE: Debes aplicar ganancias de EQ notorias. No uses +0.0 dB. 
-Usa valores entre -6.0 dB y +6.0 dB para las bandas (eq1_g, eq2_g, eq3_g, eq4_g). 
-Si recortas, usa al menos -3.0 dB. Si realzas, usa al menos +2.0 dB. 
-Haz que el sonido cambie drásticamente para bien.
-Además, decide si el instrumento necesita Gate, Compresor y EQ.
-Si es un instrumento de cola larga o suave (piano, pad, voz), pon gate_on en false. Si es rítmico (batería, bajo, guitarra), pon true.
+
+REGLA DE ORO: Eres extremadamente técnico. Aplica EQ quirúrgico, Gates precisos y Compresión dinámica.
+Usa tu conocimiento profundo de acústica para cualquier instrumento (desde un Ukelele hasta un Duduk, un Sitar o Congas).
+
+--- MANUAL DE INGENIERÍA DE AUDIO (APLICA ESTRICTAMENTE) ---
+
+1. EQ (Ecualización):
+- Batería (Kick, Snare, Toms): HPF en 30-80Hz. Ataque en 3-5kHz. Corte de barro en 300-500Hz.
+- Overheads/HiHat: HPF en 300Hz. Aire en 10-12kHz. Corte de bleed en 800Hz.
+- Bajo: HPF en 30Hz. Fundamental en 80-100Hz. Claridad en 1-2kHz. Corte en 300Hz.
+- Guitarras (Eléctricas/Acústicas): HPF en 80-100Hz. Mordida en 2-4kHz. Corte de caja en 400-800Hz.
+- Voz: HPF en 80Hz. Inteligibilidad en 3-5kHz. Corte de mud en 200-400Hz.
+- Teclados/Pianos: HPF en 50Hz. Aire en 10kHz. Corte en 300Hz.
+- Instrumentos Étnicos (Cavaquinho, Ukelele, Sitar, etc.): HPF en 100-150Hz. Brillo en 5-8kHz. Cortes medios según caja de resonancia.
+- Percusión Latina (Congas, Bongos, etc.): HPF en 80Hz. Ataque en 3kHz. Cuerpo en 200Hz.
+- Metales/Vientos (Trompeta, Saxo, Flauta): HPF en 100Hz. Brillo en 6-8kHz. Corte de nariz en 1-2kHz.
+
+- Usa ganancias entre -6.0 dB y +6.0 dB. NUNCA dejes +0.0 dB.
+- Usa Q (ancho de banda) entre 0.7 y 2.5.
+
+2. Gate (Puerta de Ruido):
+- Batería (Kick, Snare, Toms): Threshold -35 a -45dB. Attack rápido. Release rápido.
+- Overheads/HiHat: Gate OFF obligatorio (no cortar cola).
+- Voz/Piano/Cuerdas/Ambientes: Gate OFF obligatorio (dinámica natural).
+- Bajo/Guitarra/Metales: Threshold -45 a -50dB. Attack medio.
+
+3. Compresor:
+- Batería (Kick, Snare): Threshold -15 a -25dB. Ratio 3:1 a 4:1. Attack rápido (5-15ms).
+- Overheads: Threshold -20dB. Ratio 2:1. Attack lento (30ms).
+- Voz: Threshold -18 a -24dB. Ratio 2.5:1 a 3:1. Attack medio (15-25ms).
+- Bajo: Threshold -20dB. Ratio 4:1. Attack rápido (10ms).
+- Instrumentos suaves (Piano, Cuerdas): Compresión suave (Ratio 2:1) o sin compresor.
+
+--- REGLAS DE ESTADO (GATE/COMP/EQ) ---
+- Si es Batería: Kick, Snare, Toms -> "gate_on": true. Overheads, HiHat -> "gate_on": false.
+- Si es cola larga o suave (piano, pad, voz, cuerdas, étnicos de cuerda) -> "gate_on": false, "comp_on": false.
+- Si es rítmico o percusivo (bajo, guitarra, metales, percusión) -> "gate_on": true, "comp_on": true.
+- Todo lleva "eq_on": true.
+
 Devuelve SOLO un array JSON con los objetos correspondientes.
-Cada objeto debe tener: nombre_variacion, gate_on (true/false), comp_on (true/false), eq_on (true/false), eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
+Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
     modelos = obtener_modelos_candidatos()
     ultimo_error = ""
