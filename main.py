@@ -20,7 +20,6 @@ client = None
 if API_KEY:
     client = genai.Client(api_key=API_KEY)
 
-# Diccionario temporal en memoria para guardar los códigos de verificación
 codigos_pendientes = {}
 
 class EmailRequest(BaseModel):
@@ -36,57 +35,30 @@ class PresetRequest(BaseModel):
     email: str = None
 
 def enviar_email_brevo(destinatario, codigo):
-    """Envía un correo real usando la API de Brevo."""
     if not BREVO_API_KEY:
-        print("Falta BREVO_API_KEY en las variables de entorno")
         return False
-    
     url = "https://api.brevo.com/v3/smtp/email"
-    headers = {
-        "accept": "application/json",
-        "api-key": BREVO_API_KEY,
-        "content-type": "application/json"
-    }
+    headers = {"accept": "application/json", "api-key": BREVO_API_KEY, "content-type": "application/json"}
     data = {
         "sender": {"name": "World Presets", "email": "worldpresets.ia@gmail.com"},
         "to": [{"email": destinatario}],
         "subject": "Tu código de verificación - World Presets",
-        "htmlContent": f"""
-        <html>
-            <body style="font-family: Arial, sans-serif; color: #333;">
-                <h2>Bienvenido a World Presets IA</h2>
-                <p>Estás a un paso de generar tus propios presets.</p>
-                <p>Tu código de verificación es: <strong style="font-size: 24px; color: #00e5ff;">{codigo}</strong></p>
-                <p>Ingresalo en el programa para comenzar a crear.</p>
-                <br>
-                <p style="font-size: 12px; color: #888;">Si no solicitaste este código, podés ignorar este mensaje.</p>
-            </body>
-        </html>
-        """
+        "htmlContent": f"<html><body><h2>Tu código es:</h2><h1>{codigo}</h1></body></html>"
     }
-    
     req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
     try:
         with urllib.request.urlopen(req) as response:
             return True
-    except Exception as e:
-        print(f"Error al enviar email por Brevo: {e}")
+    except:
         return False
 
 def verificar_limite_y_actualizar(email):
     if email == "test@test.com":
         return True, "Usuario de prueba aceptado (Ilimitado)"
-
     if not SUPABASE_URL or not SUPABASE_KEY:
-        return False, "Faltan configurar las variables de Supabase en Render"
+        return False, "Faltan configurar las variables de Supabase"
 
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
-    }
-
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
     url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
     req_get = urllib.request.Request(url_get, headers=headers)
     
@@ -100,7 +72,6 @@ def verificar_limite_y_actualizar(email):
         usuario = data[0]
         if usuario["usadas"] >= usuario["limite"]:
             return False, f"Límite alcanzado ({usuario['limite']} generaciones)."
-        
         nuevas_usadas = usuario["usadas"] + 1
         url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
         body_patch = json.dumps({"usadas": nuevas_usadas}).encode('utf-8')
@@ -118,44 +89,40 @@ def obtener_modelos_candidatos():
     try:
         candidatos = []
         for m in client.models.list():
-            if "generateContent" not in m.supported_actions:
-                continue
+            if "generateContent" not in m.supported_actions: continue
             nombre = m.name.split("/")[-1]
-            if "flash" not in nombre.lower():
-                continue
+            if "flash" not in nombre.lower(): continue
             match = re.search(r'(\d+\.\d+)', nombre)
             version = float(match.group(1)) if match else 0.0
             es_estable = 1 if "preview" not in nombre.lower() else 0
             candidatos.append((es_estable, version, nombre))
-        
         candidatos.sort(key=lambda x: (x[0], x[1]), reverse=True)
         lista_final = [c[2] for c in candidatos]
         lista_final.append("gemini-flash-latest") 
         return lista_final
-    except Exception:
-        return ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+    except:
+        return ["gemini-2.5-flash", "gemini-flash-latest"]
 
 def es_solicitud_de_bateria(texto):
     return any(p in texto.lower() for p in ["bateria","batería","drumkit","drums","kit"])
 
 @app.get("/")
 def read_root():
-    return {"status": "Portero listo y conectado a Supabase y Brevo"}
+    return {"status": "Portero listo"}
 
 @app.post("/enviar-codigo")
 def enviar_codigo(req: EmailRequest):
     codigo = str(random.randint(100000, 999999))
     codigos_pendientes[req.email] = codigo
-    
     if enviar_email_brevo(req.email, codigo):
-        return {"status": "ok", "mensaje": "Código enviado al correo"}
+        return {"status": "ok", "mensaje": "Código enviado"}
     else:
-        raise HTTPException(status_code=500, detail="Error al enviar el correo electrónico")
+        raise HTTPException(status_code=500, detail="Error al enviar correo")
 
 @app.post("/verificar-codigo")
 def verificar_codigo(req: CodigoRequest):
     if req.email in codigos_pendientes and codigos_pendientes[req.email] == req.codigo:
-        del codigos_pendientes[req.email] # El código se borra después de usarlo
+        del codigos_pendientes[req.email]
         return {"status": "ok", "mensaje": "Verificado correctamente"}
     else:
         raise HTTPException(status_code=400, detail="Código incorrecto o expirado")
@@ -164,9 +131,8 @@ def verificar_codigo(req: CodigoRequest):
 def generar_preset(req: PresetRequest):
     if not client:
         raise HTTPException(status_code=500, detail="API Key no configurada")
-    
     if not req.email:
-        raise HTTPException(status_code=403, detail="Se requiere el email para generar")
+        raise HTTPException(status_code=403, detail="Se requiere el email")
         
     valido, msj = verificar_limite_y_actualizar(req.email)
     if not valido:
@@ -181,6 +147,10 @@ def generar_preset(req: PresetRequest):
     prompt_sistema = f"""Eres ingeniero de sonido experto en consolas Behringer/Midas.
 Usuario busca: "{req.prompt}" para {req.consola}.
 {reglas}
+IMPORTANTE: Debes aplicar ganancias de EQ notorias. No uses +0.0 dB. 
+Usa valores entre -6.0 dB y +6.0 dB para las bandas (eq1_g, eq2_g, eq3_g, eq4_g). 
+Si recortas, usa al menos -3.0 dB. Si realzas, usa al menos +2.0 dB. 
+Haz que el sonido cambie drásticamente para bien.
 Devuelve SOLO un array JSON con los objetos correspondientes.
 Cada objeto debe tener: nombre_variacion, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
@@ -199,4 +169,4 @@ Cada objeto debe tener: nombre_variacion, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2
             ultimo_error = str(e)
             continue 
             
-    raise HTTPException(status_code=500, detail=f"Todos los modelos fallaron. Último error: {ultimo_error}")
+    raise HTTPException(status_code=500, detail=f"Error: {ultimo_error}")
