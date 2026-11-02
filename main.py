@@ -53,7 +53,7 @@ def enviar_email_brevo(destinatario, codigo):
     except:
         return False
 
-def verificar_limite_y_actualizar(email, hwid):
+def verificar_limite_y_actualizar(email, hwid, consola_solicitada):
     if email == "test@test.com":
         return True, "Usuario de prueba aceptado (Ilimitado)"
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -83,8 +83,13 @@ def verificar_limite_y_actualizar(email, hwid):
             try: urllib.request.urlopen(req_patch)
             except: pass
 
+        licencia = usuario.get("tipo_licencia", "DEMO")
+        if licencia == "XR18" and consola_solicitada not in ["XR18 - MR18", "X32 - M32", "X32", "XR18"]:
+            return False, "Tu licencia es solo para XR18. Actualizá al Pack Estrella para usar todas las consolas."
+
         if usuario["usadas"] >= usuario["limite"]:
             return False, f"Límite alcanzado ({usuario['limite']} generaciones)."
+            
         nuevas_usadas = usuario["usadas"] + 1
         url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
         body_patch = json.dumps({"usadas": nuevas_usadas}).encode('utf-8')
@@ -93,7 +98,7 @@ def verificar_limite_y_actualizar(email, hwid):
         return True, f"Generación {nuevas_usadas} de {usuario['limite']} permitida"
     else:
         url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
-        body_post = json.dumps({"email": email, "usadas": 1, "limite": 10, "hwid": hwid}).encode('utf-8')
+        body_post = json.dumps({"email": email, "usadas": 1, "limite": 10, "hwid": hwid, "tipo_licencia": "DEMO"}).encode('utf-8')
         req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
         urllib.request.urlopen(req_post)
         return True, "Generación 1 de 10 permitida (Nuevo usuario registrado)"
@@ -147,7 +152,7 @@ def generar_preset(req: PresetRequest):
     if not req.email:
         raise HTTPException(status_code=403, detail="Se requiere el email")
         
-    valido, msj = verificar_limite_y_actualizar(req.email, req.hwid)
+    valido, msj = verificar_limite_y_actualizar(req.email, req.hwid, req.consola)
     if not valido:
         raise HTTPException(status_code=403, detail=msj)
     
@@ -221,7 +226,7 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
             
     raise HTTPException(status_code=500, detail=f"Error: {ultimo_error}")
 
-# --- INICIO WEBHOOK GUMROAD ---
+# --- INICIO WEBHOOK GUMROAD CON LICENCIAS ---
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
     try:
@@ -232,12 +237,16 @@ async def gumroad_webhook(request: Request):
             return {"status": "ok", "mensaje": "Reembolso ignorado"}
         
         email = datos.get("email")
-        if not email:
-            return {"status": "error", "mensaje": "No se recibió email"}
-
-        # Por defecto sumamos 100 generaciones (luego podemos diferenciar packs)
-        generaciones_a_sumar = 100 
+        product_id = datos.get("product_id")
         
+        if not email or not product_id:
+            return {"status": "error", "mensaje": "Faltan datos"}
+
+        ID_PACK_XR18 = "ID_DEL_PACK_XR18_AQUI"
+        ID_PACK_ESTRELLA = "ID_DEL_PACK_ESTRELLA_AQUI"
+        ID_RECARGA_100 = "ID_DE_RECARGA_100_AQUI"
+        ID_RECARGA_500 = "ID_DE_RECARGA_500_AQUI"
+
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
         url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
         req_get = urllib.request.Request(url_get, headers=headers)
@@ -247,18 +256,55 @@ async def gumroad_webhook(request: Request):
             
         if len(data) > 0:
             usuario = data[0]
-            nuevo_limite = usuario["limite"] + generaciones_a_sumar
-            url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
-            body_patch = json.dumps({"limite": nuevo_limite}).encode('utf-8')
-            req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
-            urllib.request.urlopen(req_patch)
-        else:
-            url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
-            body_post = json.dumps({"email": email, "usadas": 0, "limite": generaciones_a_sumar}).encode('utf-8')
-            req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
-            urllib.request.urlopen(req_post)
+            licencia_actual = usuario.get("tipo_licencia", "DEMO")
+            limite_actual = usuario["limite"]
+            
+            if product_id == ID_PACK_XR18:
+                nuevo_limite = limite_actual + 100
+                url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+                body_patch = json.dumps({"limite": nuevo_limite, "tipo_licencia": "XR18"}).encode('utf-8')
+                req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
+                urllib.request.urlopen(req_patch)
+                return {"status": "ok", "mensaje": "Pack XR18 activado"}
+                
+            elif product_id == ID_PACK_ESTRELLA:
+                nuevo_limite = limite_actual + 1000
+                url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+                body_patch = json.dumps({"limite": nuevo_limite, "tipo_licencia": "FULL"}).encode('utf-8')
+                req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
+                urllib.request.urlopen(req_patch)
+                return {"status": "ok", "mensaje": "Pack Estrella activado"}
 
-        return {"status": "ok", "mensaje": f"{generaciones_a_sumar} generaciones añadidas a {email}"}
+            elif product_id in [ID_RECARGA_100, ID_RECARGA_500]:
+                if licencia_actual == "DEMO":
+                    return {"status": "error", "mensaje": "Compraste una recarga, pero no tenés licencia. Comprá un Pack Principal primero."}
+                
+                gens_a_sumar = 100 if product_id == ID_RECARGA_100 else 500
+                nuevo_limite = limite_actual + gens_a_sumar
+                url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+                body_patch = json.dumps({"limite": nuevo_limite}).encode('utf-8')
+                req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
+                urllib.request.urlopen(req_patch)
+                return {"status": "ok", "mensaje": f"Recarga de {gens_a_sumar} activada"}
+            
+            else:
+                return {"status": "ok", "mensaje": "Producto no reconocido"}
+        else:
+            if product_id == ID_PACK_XR18:
+                url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
+                body_post = json.dumps({"email": email, "usadas": 0, "limite": 100, "tipo_licencia": "XR18"}).encode('utf-8')
+                req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
+                urllib.request.urlopen(req_post)
+                return {"status": "ok", "mensaje": "Nuevo usuario XR18 creado"}
+            elif product_id == ID_PACK_ESTRELLA:
+                url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
+                body_post = json.dumps({"email": email, "usadas": 0, "limite": 1000, "tipo_licencia": "FULL"}).encode('utf-8')
+                req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
+                urllib.request.urlopen(req_post)
+                return {"status": "ok", "mensaje": "Nuevo usuario FULL creado"}
+            else:
+                return {"status": "error", "mensaje": "Usuario nuevo intentó comprar recarga sin licencia"}
+
     except Exception as e:
         return {"status": "error", "mensaje": str(e)}
 # --- FIN WEBHOOK GUMROAD ---
