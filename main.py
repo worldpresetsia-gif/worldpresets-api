@@ -33,6 +33,7 @@ class PresetRequest(BaseModel):
     prompt: str
     consola: str
     email: str = None
+    hwid: str = None # NUEVO CAMPO HWID
 
 def enviar_email_brevo(destinatario, codigo):
     if not BREVO_API_KEY:
@@ -52,7 +53,7 @@ def enviar_email_brevo(destinatario, codigo):
     except:
         return False
 
-def verificar_limite_y_actualizar(email):
+def verificar_limite_y_actualizar(email, hwid):
     if email == "test@test.com":
         return True, "Usuario de prueba aceptado (Ilimitado)"
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -70,6 +71,20 @@ def verificar_limite_y_actualizar(email):
 
     if len(data) > 0:
         usuario = data[0]
+        
+        # VALIDACIÓN DE HWID
+        hwid_guardado = usuario.get("hwid")
+        if hwid_guardado and hwid_guardado != hwid:
+            return False, "Este email ya está registrado en otra computadora. Contactá a soporte."
+        
+        # Si el HWID está vacío (usuario viejo), lo actualizamos
+        if not hwid_guardado and hwid:
+            url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+            body_patch = json.dumps({"hwid": hwid}).encode('utf-8')
+            req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
+            try: urllib.request.urlopen(req_patch)
+            except: pass
+
         if usuario["usadas"] >= usuario["limite"]:
             return False, f"Límite alcanzado ({usuario['limite']} generaciones)."
         nuevas_usadas = usuario["usadas"] + 1
@@ -79,8 +94,9 @@ def verificar_limite_y_actualizar(email):
         urllib.request.urlopen(req_patch)
         return True, f"Generación {nuevas_usadas} de {usuario['limite']} permitida"
     else:
+        # Usuario nuevo: guardamos email, usadas, limite Y el hwid
         url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
-        body_post = json.dumps({"email": email, "usadas": 1, "limite": 10}).encode('utf-8')
+        body_post = json.dumps({"email": email, "usadas": 1, "limite": 10, "hwid": hwid}).encode('utf-8')
         req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
         urllib.request.urlopen(req_post)
         return True, "Generación 1 de 10 permitida (Nuevo usuario registrado)"
@@ -134,7 +150,7 @@ def generar_preset(req: PresetRequest):
     if not req.email:
         raise HTTPException(status_code=403, detail="Se requiere el email")
         
-    valido, msj = verificar_limite_y_actualizar(req.email)
+    valido, msj = verificar_limite_y_actualizar(req.email, req.hwid)
     if not valido:
         raise HTTPException(status_code=403, detail=msj)
     
