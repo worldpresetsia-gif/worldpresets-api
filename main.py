@@ -4,7 +4,7 @@ import json
 import random
 import urllib.request
 import urllib.parse
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
@@ -33,7 +33,7 @@ class PresetRequest(BaseModel):
     prompt: str
     consola: str
     email: str = None
-    hwid: str = None # NUEVO CAMPO HWID
+    hwid: str = None
 
 def enviar_email_brevo(destinatario, codigo):
     if not BREVO_API_KEY:
@@ -72,12 +72,10 @@ def verificar_limite_y_actualizar(email, hwid):
     if len(data) > 0:
         usuario = data[0]
         
-        # VALIDACIÓN DE HWID
         hwid_guardado = usuario.get("hwid")
         if hwid_guardado and hwid_guardado != hwid:
             return False, "Este email ya está registrado en otra computadora. Contactá a soporte."
         
-        # Si el HWID está vacío (usuario viejo), lo actualizamos
         if not hwid_guardado and hwid:
             url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
             body_patch = json.dumps({"hwid": hwid}).encode('utf-8')
@@ -94,7 +92,6 @@ def verificar_limite_y_actualizar(email, hwid):
         urllib.request.urlopen(req_patch)
         return True, f"Generación {nuevas_usadas} de {usuario['limite']} permitida"
     else:
-        # Usuario nuevo: guardamos email, usadas, limite Y el hwid
         url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
         body_post = json.dumps({"email": email, "usadas": 1, "limite": 10, "hwid": hwid}).encode('utf-8')
         req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
@@ -223,3 +220,45 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
             continue 
             
     raise HTTPException(status_code=500, detail=f"Error: {ultimo_error}")
+
+# --- INICIO WEBHOOK GUMROAD ---
+@app.post("/gumroad-webhook")
+async def gumroad_webhook(request: Request):
+    try:
+        form_data = await request.form()
+        datos = dict(form_data)
+        
+        if datos.get("refunded") == "true":
+            return {"status": "ok", "mensaje": "Reembolso ignorado"}
+        
+        email = datos.get("email")
+        if not email:
+            return {"status": "error", "mensaje": "No se recibió email"}
+
+        # Por defecto sumamos 100 generaciones (luego podemos diferenciar packs)
+        generaciones_a_sumar = 100 
+        
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
+        url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+        req_get = urllib.request.Request(url_get, headers=headers)
+        
+        with urllib.request.urlopen(req_get) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            
+        if len(data) > 0:
+            usuario = data[0]
+            nuevo_limite = usuario["limite"] + generaciones_a_sumar
+            url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+            body_patch = json.dumps({"limite": nuevo_limite}).encode('utf-8')
+            req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
+            urllib.request.urlopen(req_patch)
+        else:
+            url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
+            body_post = json.dumps({"email": email, "usadas": 0, "limite": generaciones_a_sumar}).encode('utf-8')
+            req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
+            urllib.request.urlopen(req_post)
+
+        return {"status": "ok", "mensaje": f"{generaciones_a_sumar} generaciones añadidas a {email}"}
+    except Exception as e:
+        return {"status": "error", "mensaje": str(e)}
+# --- FIN WEBHOOK GUMROAD ---
