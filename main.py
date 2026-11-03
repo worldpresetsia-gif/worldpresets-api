@@ -194,51 +194,36 @@ def generar_preset(req: PresetRequest):
     else:
         reglas = "Genera 3 variaciones."
         
+    # Prompt optimizado para ser más corto y consumir menos tokens
     prompt_sistema = f"""Eres un Ingeniero de Mezcla Senior. Usuario busca: "{req.prompt}" para {req.consola}.
 {reglas}
 
 REGLA DE ORO: Eres extremadamente técnico. NO devuelvas ganancias de EQ en 0.0. Aplica EQ quirúrgico, Gates precisos y Compresión dinámica.
 
---- MANUAL DE INGENIERÍA (APLICA ESTRICTAMENTE) ---
+--- MANUAL DE INGENIERÍA ---
 1. EQ (Ecualización):
-- Batería (Kick, Snare, Toms): HPF 30-80Hz. Ataque en 3-5kHz (eq3_f). Corte de barro en 300-500Hz (eq2_f).
+- Batería: HPF 30-80Hz. Ataque en 3-5kHz (eq3_f). Corte de barro en 300-500Hz (eq2_f).
 - Overheads/HiHat: HPF 300Hz. Aire en 10-12kHz (eq4_f). Corte de bleed en 800Hz (eq3_f).
 - Bajo: HPF 30Hz. Fundamental 80-100Hz (eq1_f). Claridad 1-2kHz (eq3_f). Corte 300Hz (eq2_f).
-- Guitarras (Eléctricas/Acústicas): HPF 80-100Hz. Mordida 2-4kHz (eq3_f). Corte de caja 400-800Hz (eq2_f).
+- Guitarras: HPF 80-100Hz. Mordida 2-4kHz (eq3_f). Corte de caja 400-800Hz (eq2_f).
 - Voz: HPF 80Hz. Inteligibilidad 3-5kHz (eq3_f). Corte mud 200-400Hz (eq2_f).
-- Teclados/Pianos: HPF 50Hz. Aire 10kHz (eq4_f). Corte en 300Hz (eq2_f).
-- Étnicos (Ukelele, Sitar, etc.): HPF 100-150Hz. Brillo 5-8kHz (eq4_f). Cortes medios según caja.
-- Percusión Latina (Congas, etc.): HPF 80Hz. Ataque 3kHz (eq3_f). Cuerpo 200Hz (eq1_f).
+- Teclados: HPF 50Hz. Aire 10kHz (eq4_f). Corte en 300Hz (eq2_f).
+- Étnicos: HPF 100-150Hz. Brillo 5-8kHz (eq4_f). Cortes medios según caja.
+- Percusión: HPF 80Hz. Ataque 3kHz (eq3_f). Cuerpo 200Hz (eq1_f).
 - Metales/Vientos: HPF 100Hz. Brillo 6-8kHz (eq4_f). Corte nariz 1-2kHz (eq3_f).
 
-GANANCIAS DE EQ OBLIGATORIAS:
-- eq1_g: SIEMPRE entre -4.0 dB y +4.0 dB (NUNCA 0.0).
-- eq2_g: SIEMPRE entre -3.0 dB y -6.0 dB (Corte obligatorio).
-- eq3_g: SIEMPRE entre +2.0 dB y +5.0 dB (Realce de ataque).
-- eq4_g: SIEMPRE entre +2.0 dB y +4.0 dB (Aire/Brillo).
-- Usa valores de Q entre 0.8 y 2.5.
+GANANCIAS EQ OBLIGATORIAS:
+- eq1_g: entre -4.0 y +4.0 dB (NUNCA 0.0).
+- eq2_g: entre -3.0 y -6.0 dB (Corte).
+- eq3_g: entre +2.0 y +5.0 dB (Ataque).
+- eq4_g: entre +2.0 y +4.0 dB (Aire).
+- Q entre 0.8 y 2.5.
 
-2. Gate:
-- Batería (Kick, Snare, Toms): gate_on TRUE. Threshold -35 a -45dB. 
-- Overheads/HiHat: gate_on FALSE.
-- Voz/Piano/Cuerdas/Ambientes: gate_on FALSE.
-- Bajo/Guitarra/Metales: gate_on TRUE. Threshold -45 a -50dB.
-
-3. Compresor:
-- Batería (Kick, Snare): comp_on TRUE. Threshold -15 a -25dB. Ratio 3:1 a 4:1.
-- Overheads: comp_on TRUE. Threshold -20dB. Ratio 2:1.
-- Voz: comp_on TRUE. Threshold -18 a -24dB. Ratio 2.5:1 a 3:1.
-- Bajo: comp_on TRUE. Threshold -20dB. Ratio 4:1.
-- Suaves (Piano/Cuerdas): comp_on FALSE o Ratio 2:1 muy suave.
-
---- ESTADOS ---
-- Si es Batería: Kick/Snare/Toms gate_on=true. OHs/HiHat gate_on=false.
-- Si es cola larga (piano, pad, voz, cuerdas): gate_on=false, comp_on=false.
-- Si es rítmico (bajo, guitarra, percusión): gate_on=true, comp_on=true.
-- eq_on: SIEMPRE true.
+2. Gate: Batería (Kick/Snare/Toms) ON. Overheads/HiHat OFF. Voz/Piano OFF. Bajo/Guitarra ON.
+3. Compresor: Batería ON. Overheads ON. Voz ON. Bajo ON. Suaves (Piano) OFF.
 
 Devuelve SOLO un array JSON.
-Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
+Cada objeto: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
     url_groq = "https://api.groq.com/openai/v1/chat/completions"
     headers_groq = {
@@ -253,8 +238,8 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
         "response_format": {"type": "json_object"}
     }
 
-    # --- INICIO DE LA LÓGICA DE REINTENTO ---
-    max_retries = 3
+    # Lógica de reintento AGRESIVA para vencer al 409
+    max_retries = 5
     for attempt in range(max_retries):
         try:
             req_ai = urllib.request.Request(url_groq, data=json.dumps(payload).encode('utf-8'), headers=headers_groq, method='POST')
@@ -262,7 +247,6 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
                 res_data = json.loads(response.read().decode('utf-8'))
                 json_respuesta = res_data["choices"][0]["message"]["content"]
                 
-                # Guardado en caché (solo si la IA respondió bien)
                 try:
                     url_post_cache = f"{SUPABASE_URL}/rest/v1/cache_presets"
                     body_post_cache = json.dumps({
@@ -281,7 +265,8 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
 
         except urllib.error.HTTPError as e:
             if e.code in [409, 429] and attempt < max_retries - 1:
-                wait_time = (2 ** attempt) + random.random() # Backoff exponencial con jitter
+                # Espera agresiva: 2s, 4s, 8s, 16s...
+                wait_time = (2 ** attempt) * 2 + random.uniform(0, 1)
                 print(f"Error {e.code} de Groq. Reintentando en {wait_time:.2f} segundos...")
                 time.sleep(wait_time)
                 continue
@@ -289,7 +274,8 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
                 raise HTTPException(status_code=500, detail=f"Error de Groq. Detalle: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error inesperado: {str(e)}")
-    # --- FIN DE LA LÓGICA DE REINTENTO ---
+            
+    raise HTTPException(status_code=500, detail="Groq está saturado en este momento. Intenta de nuevo en unos minutos.")
 
 # El webhook de Gumroad se mantiene exactamente igual
 @app.post("/gumroad-webhook")
