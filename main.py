@@ -242,10 +242,9 @@ async def gumroad_webhook(request: Request):
         if not email or not product_id:
             return {"status": "error", "mensaje": "Faltan datos"}
 
-        ID_PACK_XR18 = "ID_DEL_PACK_XR18_AQUI"
-        ID_PACK_ESTRELLA = "ID_DEL_PACK_ESTRELLA_AQUI"
-        ID_RECARGA_100 = "ID_DE_RECARGA_100_AQUI"
-        ID_RECARGA_500 = "ID_DE_RECARGA_500_AQUI"
+        # IDs REALES DE GUMROAD
+        ID_PACK_FULL = "xzkedi"
+        ID_RECARGA_100 = "duahk"
 
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
         url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
@@ -259,15 +258,8 @@ async def gumroad_webhook(request: Request):
             licencia_actual = usuario.get("tipo_licencia", "DEMO")
             limite_actual = usuario["limite"]
             
-            if product_id == ID_PACK_XR18:
-                nuevo_limite = limite_actual + 100
-                url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
-                body_patch = json.dumps({"limite": nuevo_limite, "tipo_licencia": "XR18"}).encode('utf-8')
-                req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
-                urllib.request.urlopen(req_patch)
-                return {"status": "ok", "mensaje": "Pack XR18 activado"}
-                
-            elif product_id == ID_PACK_ESTRELLA:
+            # LÓGICA DE PACK PRINCIPAL (Da licencia FULL)
+            if product_id == ID_PACK_FULL:
                 nuevo_limite = limite_actual + 1000
                 url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
                 body_patch = json.dumps({"limite": nuevo_limite, "tipo_licencia": "FULL"}).encode('utf-8')
@@ -275,28 +267,23 @@ async def gumroad_webhook(request: Request):
                 urllib.request.urlopen(req_patch)
                 return {"status": "ok", "mensaje": "Pack Estrella activado"}
 
-            elif product_id in [ID_RECARGA_100, ID_RECARGA_500]:
+            # LÓGICA DE RECARGA (Requiere licencia previa)
+            elif product_id == ID_RECARGA_100:
                 if licencia_actual == "DEMO":
-                    return {"status": "error", "mensaje": "Compraste una recarga, pero no tenés licencia. Comprá un Pack Principal primero."}
+                    return {"status": "error", "mensaje": "Compraste una recarga, pero no tenés licencia. Comprá el Pack Principal primero."}
                 
-                gens_a_sumar = 100 if product_id == ID_RECARGA_100 else 500
-                nuevo_limite = limite_actual + gens_a_sumar
+                nuevo_limite = limite_actual + 100
                 url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
                 body_patch = json.dumps({"limite": nuevo_limite}).encode('utf-8')
                 req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
                 urllib.request.urlopen(req_patch)
-                return {"status": "ok", "mensaje": f"Recarga de {gens_a_sumar} activada"}
+                return {"status": "ok", "mensaje": "Recarga de 100 activada"}
             
             else:
                 return {"status": "ok", "mensaje": "Producto no reconocido"}
         else:
-            if product_id == ID_PACK_XR18:
-                url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
-                body_post = json.dumps({"email": email, "usadas": 0, "limite": 100, "tipo_licencia": "XR18"}).encode('utf-8')
-                req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
-                urllib.request.urlopen(req_post)
-                return {"status": "ok", "mensaje": "Nuevo usuario XR18 creado"}
-            elif product_id == ID_PACK_ESTRELLA:
+            # Si es un usuario nuevo comprando directo el pack principal
+            if product_id == ID_PACK_FULL:
                 url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
                 body_post = json.dumps({"email": email, "usadas": 0, "limite": 1000, "tipo_licencia": "FULL"}).encode('utf-8')
                 req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
