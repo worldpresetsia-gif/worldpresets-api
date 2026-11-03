@@ -4,6 +4,7 @@ import json
 import random
 import urllib.request
 import urllib.parse
+import time
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
@@ -193,7 +194,6 @@ def generar_preset(req: PresetRequest):
     else:
         reglas = "Genera 3 variaciones."
         
-    # CAMBIO: Se agregó "Devuelve SOLO un array JSON." al final para cumplir con Groq
     prompt_sistema = f"""Eres un Ingeniero de Mezcla Senior. Usuario busca: "{req.prompt}" para {req.consola}.
 {reglas}
 
@@ -247,37 +247,49 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
-    # CAMBIO: Se reemplazó el modelo retirado por el actual openai/gpt-oss-20b
     payload = {
         "model": "openai/gpt-oss-20b",
         "messages": [{"role": "user", "content": prompt_sistema}],
         "response_format": {"type": "json_object"}
     }
 
-    try:
-        req_ai = urllib.request.Request(url_groq, data=json.dumps(payload).encode('utf-8'), headers=headers_groq, method='POST')
-        with urllib.request.urlopen(req_ai, timeout=60) as response:
-            res_data = json.loads(response.read().decode('utf-8'))
-            json_respuesta = res_data["choices"][0]["message"]["content"]
-            
-            try:
-                url_post_cache = f"{SUPABASE_URL}/rest/v1/cache_presets"
-                body_post_cache = json.dumps({
-                    "consola": req.consola, 
-                    "prompt_buscado": prompt_limpio, 
-                    "datos_json": json.loads(json_respuesta)
-                }).encode('utf-8')
-                req_post_cache = urllib.request.Request(url_post_cache, data=body_post_cache, headers=headers_supabase, method='POST')
-                urllib.request.urlopen(req_post_cache)
-            except Exception as e:
-                pass
+    # --- INICIO DE LA LÓGICA DE REINTENTO ---
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            req_ai = urllib.request.Request(url_groq, data=json.dumps(payload).encode('utf-8'), headers=headers_groq, method='POST')
+            with urllib.request.urlopen(req_ai, timeout=60) as response:
+                res_data = json.loads(response.read().decode('utf-8'))
+                json_respuesta = res_data["choices"][0]["message"]["content"]
+                
+                # Guardado en caché (solo si la IA respondió bien)
+                try:
+                    url_post_cache = f"{SUPABASE_URL}/rest/v1/cache_presets"
+                    body_post_cache = json.dumps({
+                        "consola": req.consola, 
+                        "prompt_buscado": prompt_limpio, 
+                        "datos_json": json.loads(json_respuesta)
+                    }).encode('utf-8')
+                    req_post_cache = urllib.request.Request(url_post_cache, data=body_post_cache, headers=headers_supabase, method='POST')
+                    urllib.request.urlopen(req_post_cache)
+                except Exception as e:
+                    pass
 
-            cobrar_generacion(req.email, req.hwid) 
-            
-            return {"status": "ok", "modelo_usado": "groq-gpt-oss-20b", "mensaje_limite": "Generación exitosa", "datos": json_respuesta}
+                cobrar_generacion(req.email, req.hwid) 
+                
+                return {"status": "ok", "modelo_usado": "groq-gpt-oss-20b", "mensaje_limite": "Generación exitosa", "datos": json_respuesta}
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error de Groq. Detalle: {str(e)}")
+        except urllib.error.HTTPError as e:
+            if e.code in [409, 429] and attempt < max_retries - 1:
+                wait_time = (2 ** attempt) + random.random() # Backoff exponencial con jitter
+                print(f"Error {e.code} de Groq. Reintentando en {wait_time:.2f} segundos...")
+                time.sleep(wait_time)
+                continue
+            else:
+                raise HTTPException(status_code=500, detail=f"Error de Groq. Detalle: {str(e)}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error inesperado: {str(e)}")
+    # --- FIN DE LA LÓGICA DE REINTENTO ---
 
 # El webhook de Gumroad se mantiene exactamente igual
 @app.post("/gumroad-webhook")
