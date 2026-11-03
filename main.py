@@ -241,16 +241,25 @@ async def gumroad_webhook(request: Request):
             return {"status": "ok", "mensaje": "Reembolso ignorado"}
         
         email = datos.get("email")
-        # CORRECCIÓN CRÍTICA: Usar short_product_id (que es el código corto xzkedi)
         product_id = datos.get("short_product_id") or datos.get("product_id")
         
         if not email or not product_id:
             print("ERROR: Faltan datos.")
             return {"status": "error", "mensaje": "Faltan datos"}
 
-        # IDs REALES DE GUMROAD
-        ID_PACK_FULL = "xzkedi"
-        ID_RECARGA_100 = "duahk"
+        # --- TABLA DE IDs REALES Y SUS GENERACIONES ---
+        PACKS_LICENCIA = {
+            "kwcedd": 100,    # Pack Inicial
+            "xsocpy": 200,    # Pack Medio
+            "sodyxd": 500,    # Pack Avanzado
+            "xzkedi": 1000,   # Pack Estrella
+            "wzzlgq": 5000    # Pack Ridículo
+        }
+        
+        # Recargas (No dan licencia, solo suman si ya la tienen)
+        RECARGAS = {
+            "duahk": 100      # Recarga 100 Gen
+        }
 
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
         url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
@@ -264,34 +273,40 @@ async def gumroad_webhook(request: Request):
             licencia_actual = usuario.get("tipo_licencia", "DEMO")
             limite_actual = usuario["limite"]
             
-            if product_id == ID_PACK_FULL:
-                nuevo_limite = limite_actual + 1000
+            # Si compró un Pack Principal
+            if product_id in PACKS_LICENCIA:
+                gens_a_sumar = PACKS_LICENCIA[product_id]
+                nuevo_limite = limite_actual + gens_a_sumar
                 url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
                 body_patch = json.dumps({"limite": nuevo_limite, "tipo_licencia": "FULL"}).encode('utf-8')
                 req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
                 urllib.request.urlopen(req_patch)
-                return {"status": "ok", "mensaje": "Pack Estrella activado"}
+                return {"status": "ok", "mensaje": f"Pack de {gens_a_sumar} gen activado"}
 
-            elif product_id == ID_RECARGA_100:
+            # Si compró una Recarga
+            elif product_id in RECARGAS:
                 if licencia_actual == "DEMO":
-                    return {"status": "error", "mensaje": "Compraste una recarga, pero no tenés licencia. Comprá el Pack Principal primero."}
+                    return {"status": "error", "mensaje": "Compraste una recarga, pero no tenés licencia. Comprá un Pack Principal primero."}
                 
-                nuevo_limite = limite_actual + 100
+                gens_a_sumar = RECARGAS[product_id]
+                nuevo_limite = limite_actual + gens_a_sumar
                 url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
                 body_patch = json.dumps({"limite": nuevo_limite}).encode('utf-8')
                 req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
                 urllib.request.urlopen(req_patch)
-                return {"status": "ok", "mensaje": "Recarga de 100 activada"}
+                return {"status": "ok", "mensaje": f"Recarga de {gens_a_sumar} activada"}
             
             else:
                 return {"status": "ok", "mensaje": "Producto no reconocido"}
         else:
-            if product_id == ID_PACK_FULL:
+            # Si es un usuario nuevo comprando directo un pack principal
+            if product_id in PACKS_LICENCIA:
+                gens = PACKS_LICENCIA[product_id]
                 url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
-                body_post = json.dumps({"email": email, "usadas": 0, "limite": 1000, "tipo_licencia": "FULL"}).encode('utf-8')
+                body_post = json.dumps({"email": email, "usadas": 0, "limite": gens, "tipo_licencia": "FULL"}).encode('utf-8')
                 req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
                 urllib.request.urlopen(req_post)
-                return {"status": "ok", "mensaje": "Nuevo usuario FULL creado"}
+                return {"status": "ok", "mensaje": f"Nuevo usuario FULL con {gens} creado"}
             else:
                 return {"status": "error", "mensaje": "Usuario nuevo intentó comprar recarga sin licencia"}
 
