@@ -53,7 +53,8 @@ def enviar_email_brevo(destinatario, codigo):
     except:
         return False
 
-def verificar_limite_y_actualizar(email, hwid, consola_solicitada):
+# --- NUEVA LÓGICA: VERIFICAR SIN COBRAR Y COBRAR SOLO SI HAY ÉXITO ---
+def verificar_limite(email, hwid, consola_solicitada):
     if email == "test@test.com":
         return True, "Usuario de prueba aceptado (Ilimitado)"
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -90,18 +91,34 @@ def verificar_limite_y_actualizar(email, hwid, consola_solicitada):
         if usuario["usadas"] >= usuario["limite"]:
             return False, f"Límite alcanzado ({usuario['limite']} generaciones)."
             
+        return True, "Verificado"
+    else:
+        # Es un usuario nuevo, pero no lo creamos en la DB hasta que la IA responda bien
+        return True, "Nuevo usuario verificado"
+
+def cobrar_generacion(email, hwid):
+    if email == "test@test.com":
+        return
+    
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+    url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+    req_get = urllib.request.Request(url_get, headers=headers)
+    
+    with urllib.request.urlopen(req_get) as response:
+        data = json.loads(response.read().decode('utf-8'))
+
+    if len(data) > 0:
+        usuario = data[0]
         nuevas_usadas = usuario["usadas"] + 1
         url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
         body_patch = json.dumps({"usadas": nuevas_usadas}).encode('utf-8')
         req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
         urllib.request.urlopen(req_patch)
-        return True, f"Generación {nuevas_usadas} de {usuario['limite']} permitida"
     else:
         url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
         body_post = json.dumps({"email": email, "usadas": 1, "limite": 10, "hwid": hwid, "tipo_licencia": "DEMO"}).encode('utf-8')
         req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
         urllib.request.urlopen(req_post)
-        return True, "Generación 1 de 10 permitida (Nuevo usuario registrado)"
 
 def obtener_modelos_candidatos():
     try:
@@ -152,15 +169,12 @@ def generar_preset(req: PresetRequest):
     if not req.email:
         raise HTTPException(status_code=403, detail="Se requiere el email")
         
-    valido, msj = verificar_limite_y_actualizar(req.email, req.hwid, req.consola)
+    valido, msj = verificar_limite(req.email, req.hwid, req.consola)
     if not valido:
         raise HTTPException(status_code=403, detail=msj)
 
-    # --- NUEVA LÓGICA DE CACHÉ ---
-    # 1. Limpiamos el prompt para que "Bateria Rock" y "bateria rock " sean lo mismo
+    # --- LÓGICA DE CACHÉ ---
     prompt_limpio = req.prompt.lower().strip()
-    
-    # 2. Buscamos en la tabla cache_presets
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
     url_cache = f"{SUPABASE_URL}/rest/v1/cache_presets?consola=eq.{req.consola}&prompt_buscado=eq.{prompt_limpio}"
     req_cache = urllib.request.Request(url_cache, headers=headers)
@@ -169,12 +183,11 @@ def generar_preset(req: PresetRequest):
         with urllib.request.urlopen(req_cache) as response:
             cache_data = json.loads(response.read().decode('utf-8'))
             if len(cache_data) > 0:
-                # ¡ENCONTRADO! Devolvemos los datos guardados sin gastar IA
                 print(f"CACHÉ HIT: {prompt_limpio} para {req.consola}")
-                return {"status": "ok", "modelo_usado": "cache", "mensaje_limite": msj, "datos": json.dumps(cache_data[0]["datos_json"])}
+                cobrar_generacion(req.email, req.hwid) # Cobra recién acá porque fue exitoso
+                return {"status": "ok", "modelo_usado": "cache", "mensaje_limite": "Generación desde caché", "datos": json.dumps(cache_data[0]["datos_json"])}
     except Exception as e:
         print(f"Error leyendo caché: {e}") 
-        # Si falla la caché, seguimos con la IA normal
 
     # --- SI NO ESTÁ EN CACHÉ, LLAMAMOS A LA IA ---
     print(f"CACHÉ MISS: Generando con IA para {prompt_limpio}")
@@ -243,9 +256,12 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
                 config=types.GenerateContentConfig(response_mime_type="application/json"),
             )
             
-            # --- GUARDAMOS EN CACHÉ PARA LA PRÓXIMA VEZ ---
+            # --- GUARDAMOS EN CACHÉ Y COBRAMOS RECIÉN ACÁ ---
             try:
                 json_respuesta = response.text
+                # Validamos que sea un JSON real
+                json.loads(json_respuesta) 
+                
                 url_post_cache = f"{SUPABASE_URL}/rest/v1/cache_presets"
                 body_post_cache = json.dumps({
                     "consola": req.consola, 
@@ -256,16 +272,21 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
                 urllib.request.urlopen(req_post_cache)
                 print(f"Preset guardado en caché: {prompt_limpio}")
             except Exception as e:
-                print(f"Error al guardar en caché: {e}")
+                print(f"Error al guardar en caché (pero se genera igual): {e}")
 
-            return {"status": "ok", "modelo_usado": modelo, "mensaje_limite": msj, "datos": json_response_text}
+            # Si llegamos acá, la IA respondió bien. Ahora SÍ cobramos.
+            cobrar_generacion(req.email, req.hwid) 
+            
+            return {"status": "ok", "modelo_usado": modelo, "mensaje_limite": "Generación exitosa", "datos": response.text}
+            
         except Exception as e:
             ultimo_error = str(e)
             continue 
             
-    raise HTTPException(status_code=500, detail=f"Error: {ultimo_error}")
+    # Si ningún modelo funcionó, NO se cobra nada y se tira error
+    raise HTTPException(status_code=500, detail=f"Error de la IA. No se te cobró la generación. Detalle: {ultimo_error}")
 
-# --- INICIO WEBHOOK GUMROAD CON LICENCIAS ---
+# --- WEBHOOK GUMROAD (SIN CAMBIOS) ---
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
     try:
@@ -286,19 +307,11 @@ async def gumroad_webhook(request: Request):
             print("ERROR: Faltan datos.")
             return {"status": "error", "mensaje": "Faltan datos"}
 
-        # --- TABLA DE IDs REALES Y SUS GENERACIONES ---
-        ID_DEMO = "eqtpr" # Prueba Gratis
+        ID_DEMO = "eqtpr"
         PACKS_LICENCIA = {
-            "kwcedd": 100,    # Pack Inicial
-            "xsocpy": 200,    # Pack Medio
-            "sodyxd": 500,    # Pack Avanzado
-            "xzkedi": 1000,   # Pack Estrella
-            "wzzlgq": 5000    # Pack Ridículo
+            "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000
         }
-        
-        RECARGAS = {
-            "duahk": 100      # Recarga 100 Gen
-        }
+        RECARGAS = {"duahk": 100}
 
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
         url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
@@ -352,7 +365,7 @@ async def gumroad_webhook(request: Request):
                 body_post = json.dumps({"email": email, "usadas": 0, "limite": 10, "tipo_licencia": "DEMO"}).encode('utf-8')
                 req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
                 urllib.request.urlopen(req_post)
-                return {"status": "ok", "mensaje": "Nuevo usuario DEMO (Prueba Gratis) creado"}
+                return {"status": "ok", "mensaje": "Nuevo usuario DEMO creado"}
                 
             else:
                 return {"status": "error", "mensaje": "Usuario nuevo intentó comprar recarga sin licencia"}
@@ -360,4 +373,3 @@ async def gumroad_webhook(request: Request):
     except Exception as e:
         print("ERROR EN WEBHOOK:", str(e))
         return {"status": "error", "mensaje": str(e)}
-# --- FIN WEBHOOK GUMROAD ---
