@@ -53,7 +53,7 @@ def enviar_email_brevo(destinatario, codigo):
     except:
         return False
 
-# --- NUEVA LÓGICA: VERIFICAR SIN COBRAR Y COBRAR SOLO SI HAY ÉXITO ---
+# --- NUEVA LÓGICA: VERIFICAR SIN COBRAR ---
 def verificar_limite(email, hwid, consola_solicitada):
     if email == "test@test.com":
         return True, "Usuario de prueba aceptado (Ilimitado)"
@@ -93,9 +93,9 @@ def verificar_limite(email, hwid, consola_solicitada):
             
         return True, "Verificado"
     else:
-        # Es un usuario nuevo, pero no lo creamos en la DB hasta que la IA responda bien
         return True, "Nuevo usuario verificado"
 
+# --- NUEVA LÓGICA: COBRAR SOLO SI FUE EXITOSO ---
 def cobrar_generacion(email, hwid):
     if email == "test@test.com":
         return
@@ -259,6 +259,9 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
             # --- GUARDAMOS EN CACHÉ Y COBRAMOS RECIÉN ACÁ ---
             try:
                 json_respuesta = response.text
+                if not json_respuesta or len(json_respuesta.strip()) < 5:
+                    raise ValueError("Respuesta vacía")
+                    
                 # Validamos que sea un JSON real
                 json.loads(json_respuesta) 
                 
@@ -272,7 +275,9 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
                 urllib.request.urlopen(req_post_cache)
                 print(f"Preset guardado en caché: {prompt_limpio}")
             except Exception as e:
-                print(f"Error al guardar en caché (pero se genera igual): {e}")
+                print(f"Error al guardar en caché o JSON inválido: {e}")
+                ultimo_error = "La IA devolvió un formato inválido."
+                continue # Prueba con el siguiente modelo
 
             # Si llegamos acá, la IA respondió bien. Ahora SÍ cobramos.
             cobrar_generacion(req.email, req.hwid) 
@@ -286,7 +291,7 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
     # Si ningún modelo funcionó, NO se cobra nada y se tira error
     raise HTTPException(status_code=500, detail=f"Error de la IA. No se te cobró la generación. Detalle: {ultimo_error}")
 
-# --- WEBHOOK GUMROAD (SIN CAMBIOS) ---
+# --- INICIO WEBHOOK GUMROAD CON LICENCIAS ---
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
     try:
