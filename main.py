@@ -1,4 +1,4 @@
-import os
+    import os
 import re
 import json
 import random
@@ -173,7 +173,6 @@ def generar_preset(req: PresetRequest):
     if not valido:
         raise HTTPException(status_code=403, detail=msj)
 
-    # Lógica de caché (sin cambios)
     prompt_limpio = req.prompt.lower().strip()
     headers_supabase = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
     url_cache = f"{SUPABASE_URL}/rest/v1/cache_presets?consola=eq.{req.consola}&prompt_buscado=eq.{prompt_limpio}"
@@ -240,15 +239,16 @@ GANANCIAS DE EQ OBLIGATORIAS:
 Devuelve SOLO un array JSON.
 Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
-    # --- Llamada a Groq (OpenAI-compatible) ---
+    # --- LLAMADA A GROQ CON USER-AGENT Y MODELO ESTABLE ---
     url_groq = "https://api.groq.com/openai/v1/chat/completions"
     headers_groq = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" # ¡ESTA ES LA LÍNEA CLAVE!
     }
     
     payload = {
-        "model": "llama-3.3-70b-versatile",
+        "model": "llama-3.1-8b-instant", # Modelo más estable y con mayor cuota gratuita
         "messages": [{"role": "user", "content": prompt_sistema}],
         "response_format": {"type": "json_object"}
     }
@@ -273,7 +273,7 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
 
             cobrar_generacion(req.email, req.hwid) 
             
-            return {"status": "ok", "modelo_usado": "groq-llama-3.3", "mensaje_limite": "Generación exitosa", "datos": json_respuesta}
+            return {"status": "ok", "modelo_usado": "groq-llama-3.1-8b-instant", "mensaje_limite": "Generación exitosa", "datos": json_respuesta}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error de Groq. Detalle: {str(e)}")
