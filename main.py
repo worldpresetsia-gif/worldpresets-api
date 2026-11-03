@@ -230,8 +230,13 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
     try:
-        form_data = await request.form()
-        datos = dict(form_data)
+        # NUEVA FORMA DE LEER LOS DATOS (A PRUEBA DE BALAS)
+        body = await request.body()
+        body_str = body.decode('utf-8')
+        parsed = urllib.parse.parse_qs(body_str)
+        datos = {k: v[0] for k, v in parsed.items()}
+        
+        print("DATOS RECIBIDOS DE GUMROAD:", datos)
         
         if datos.get("refunded") == "true":
             return {"status": "ok", "mensaje": "Reembolso ignorado"}
@@ -240,6 +245,7 @@ async def gumroad_webhook(request: Request):
         product_id = datos.get("product_id")
         
         if not email or not product_id:
+            print("ERROR: Faltan datos.", datos)
             return {"status": "error", "mensaje": "Faltan datos"}
 
         # IDs REALES DE GUMROAD
@@ -258,7 +264,6 @@ async def gumroad_webhook(request: Request):
             licencia_actual = usuario.get("tipo_licencia", "DEMO")
             limite_actual = usuario["limite"]
             
-            # LÓGICA DE PACK PRINCIPAL (Da licencia FULL)
             if product_id == ID_PACK_FULL:
                 nuevo_limite = limite_actual + 1000
                 url_patch = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
@@ -267,7 +272,6 @@ async def gumroad_webhook(request: Request):
                 urllib.request.urlopen(req_patch)
                 return {"status": "ok", "mensaje": "Pack Estrella activado"}
 
-            # LÓGICA DE RECARGA (Requiere licencia previa)
             elif product_id == ID_RECARGA_100:
                 if licencia_actual == "DEMO":
                     return {"status": "error", "mensaje": "Compraste una recarga, pero no tenés licencia. Comprá el Pack Principal primero."}
@@ -282,7 +286,6 @@ async def gumroad_webhook(request: Request):
             else:
                 return {"status": "ok", "mensaje": "Producto no reconocido"}
         else:
-            # Si es un usuario nuevo comprando directo el pack principal
             if product_id == ID_PACK_FULL:
                 url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
                 body_post = json.dumps({"email": email, "usadas": 0, "limite": 1000, "tipo_licencia": "FULL"}).encode('utf-8')
@@ -293,5 +296,6 @@ async def gumroad_webhook(request: Request):
                 return {"status": "error", "mensaje": "Usuario nuevo intentó comprar recarga sin licencia"}
 
     except Exception as e:
+        print("ERROR EN WEBHOOK:", str(e))
         return {"status": "error", "mensaje": str(e)}
 # --- FIN WEBHOOK GUMROAD ---
