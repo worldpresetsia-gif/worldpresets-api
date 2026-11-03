@@ -156,10 +156,7 @@ def generar_con_gemini(prompt_sistema):
         raise Exception("Gemini API Key no configurada")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt_sistema}]}],
-        "generationConfig": {"response_mime_type": "application/json"}
-    }
+    payload = {"contents": [{"parts": [{"text": prompt_sistema}]}], "generationConfig": {"response_mime_type": "application/json"}}
     req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
     with urllib.request.urlopen(req, timeout=90) as response:
         res_data = json.loads(response.read().decode('utf-8'))
@@ -235,7 +232,6 @@ def generar_preset(req: PresetRequest):
     modelo_usado = None
     errores = []
 
-    # Cadena de fallback: Gemini -> Groq -> OpenRouter
     proveedores = [
         ("gemini", generar_con_gemini),
         ("groq", generar_con_groq),
@@ -246,10 +242,22 @@ def generar_preset(req: PresetRequest):
         for attempt in range(3):
             try:
                 print(f"Intentando con {nombre} (intento {attempt + 1})...")
-                json_respuesta = funcion(prompt_sistema)
-                modelo_usado = nombre
-                print(f"¡Éxito con {nombre}!")
-                break
+                respuesta_ai = funcion(prompt_sistema)
+                
+                # --- VALIDACIÓN DEL JSON DE LA IA ---
+                try:
+                    # A veces la IA envuelve el JSON en markdown ```json ... ```
+                    if respuesta_ai.strip().startswith("```json"):
+                        respuesta_ai = respuesta_ai.replace("```json", "").replace("```", "").strip()
+                    
+                    json.loads(respuesta_ai) # Validamos que sea JSON
+                    json_respuesta = respuesta_ai
+                    modelo_usado = nombre
+                    print(f"¡Éxito con {nombre}!")
+                    break
+                except json.JSONDecodeError:
+                    raise Exception(f"{nombre} devolvió un formato inválido.")
+
             except urllib.error.HTTPError as e:
                 if e.code in [409, 429, 503] and attempt < 2:
                     wait_time = (2 ** attempt) + random.uniform(0, 1)
