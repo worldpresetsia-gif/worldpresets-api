@@ -53,7 +53,36 @@ def enviar_email_brevo(destinatario, codigo):
     except:
         return False
 
-# --- NUEVA LÓGICA: VERIFICAR SIN COBRAR ---
+def registrar_usuario_en_supabase(email):
+    """Registra al usuario en Supabase si no existe, con 10 generaciones y licencia DEMO."""
+    if email == "test@test.com":
+        return
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
+    
+    # Verificar si ya existe
+    url_get = f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}"
+    req_get = urllib.request.Request(url_get, headers=headers)
+    try:
+        with urllib.request.urlopen(req_get) as response:
+            data = json.loads(response.read().decode('utf-8'))
+        if len(data) > 0:
+            return  # Ya existe, no hacer nada
+    except:
+        pass
+
+    # Crear usuario nuevo
+    url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
+    body_post = json.dumps({"email": email, "usadas": 0, "limite": 10, "tipo_licencia": "DEMO"}).encode('utf-8')
+    req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
+    try:
+        urllib.request.urlopen(req_post)
+        print(f"Usuario registrado en Supabase: {email}")
+    except Exception as e:
+        print(f"Error al registrar usuario: {e}")
+
 def verificar_limite(email, hwid, consola_solicitada):
     if email == "test@test.com":
         return True, "Usuario de prueba aceptado (Ilimitado)"
@@ -93,9 +122,8 @@ def verificar_limite(email, hwid, consola_solicitada):
             
         return True, "Verificado"
     else:
-        return True, "Nuevo usuario verificado"
+        return True, "Usuario nuevo verificado"
 
-# --- NUEVA LÓGICA: COBRAR SOLO SI FUE EXITOSO ---
 def cobrar_generacion(email, hwid):
     if email == "test@test.com":
         return
@@ -115,6 +143,7 @@ def cobrar_generacion(email, hwid):
         req_patch = urllib.request.Request(url_patch, data=body_patch, headers=headers, method='PATCH')
         urllib.request.urlopen(req_patch)
     else:
+        # Si por alguna razón no existe, lo creamos
         url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
         body_post = json.dumps({"email": email, "usadas": 1, "limite": 10, "hwid": hwid, "tipo_licencia": "DEMO"}).encode('utf-8')
         req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
@@ -158,6 +187,8 @@ def enviar_codigo(req: EmailRequest):
 def verificar_codigo(req: CodigoRequest):
     if req.email in codigos_pendientes and codigos_pendientes[req.email] == req.codigo:
         del codigos_pendientes[req.email]
+        # AQUÍ SE REGISTRA EL USUARIO EN SUPABASE APENAS VERIFICA EL CÓDIGO
+        registrar_usuario_en_supabase(req.email)
         return {"status": "ok", "mensaje": "Verificado correctamente"}
     else:
         raise HTTPException(status_code=400, detail="Código incorrecto o expirado")
@@ -184,7 +215,7 @@ def generar_preset(req: PresetRequest):
             cache_data = json.loads(response.read().decode('utf-8'))
             if len(cache_data) > 0:
                 print(f"CACHÉ HIT: {prompt_limpio} para {req.consola}")
-                cobrar_generacion(req.email, req.hwid) # Cobra recién acá porque fue exitoso
+                cobrar_generacion(req.email, req.hwid)
                 return {"status": "ok", "modelo_usado": "cache", "mensaje_limite": "Generación desde caché", "datos": json.dumps(cache_data[0]["datos_json"])}
     except Exception as e:
         print(f"Error leyendo caché: {e}") 
@@ -256,13 +287,11 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
                 config=types.GenerateContentConfig(response_mime_type="application/json"),
             )
             
-            # --- GUARDAMOS EN CACHÉ Y COBRAMOS RECIÉN ACÁ ---
             try:
                 json_respuesta = response.text
                 if not json_respuesta or len(json_respuesta.strip()) < 5:
                     raise ValueError("Respuesta vacía")
                     
-                # Validamos que sea un JSON real
                 json.loads(json_respuesta) 
                 
                 url_post_cache = f"{SUPABASE_URL}/rest/v1/cache_presets"
@@ -277,9 +306,8 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
             except Exception as e:
                 print(f"Error al guardar en caché o JSON inválido: {e}")
                 ultimo_error = "La IA devolvió un formato inválido."
-                continue # Prueba con el siguiente modelo
+                continue
 
-            # Si llegamos acá, la IA respondió bien. Ahora SÍ cobramos.
             cobrar_generacion(req.email, req.hwid) 
             
             return {"status": "ok", "modelo_usado": modelo, "mensaje_limite": "Generación exitosa", "datos": response.text}
@@ -288,10 +316,8 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
             ultimo_error = str(e)
             continue 
             
-    # Si ningún modelo funcionó, NO se cobra nada y se tira error
     raise HTTPException(status_code=500, detail=f"Error de la IA. No se te cobró la generación. Detalle: {ultimo_error}")
 
-# --- INICIO WEBHOOK GUMROAD CON LICENCIAS ---
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
     try:
