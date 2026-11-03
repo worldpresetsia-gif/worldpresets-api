@@ -248,6 +248,7 @@ async def gumroad_webhook(request: Request):
             return {"status": "error", "mensaje": "Faltan datos"}
 
         # --- TABLA DE IDs REALES Y SUS GENERACIONES ---
+        ID_DEMO = "eqtpr" # Prueba Gratis
         PACKS_LICENCIA = {
             "kwcedd": 100,    # Pack Inicial
             "xsocpy": 200,    # Pack Medio
@@ -256,7 +257,6 @@ async def gumroad_webhook(request: Request):
             "wzzlgq": 5000    # Pack Ridículo
         }
         
-        # Recargas (No dan licencia, solo suman si ya la tienen)
         RECARGAS = {
             "duahk": 100      # Recarga 100 Gen
         }
@@ -296,10 +296,14 @@ async def gumroad_webhook(request: Request):
                 urllib.request.urlopen(req_patch)
                 return {"status": "ok", "mensaje": f"Recarga de {gens_a_sumar} activada"}
             
+            # Si compró la Prueba Gratis (No hace nada si ya está registrado, pero confirma)
+            elif product_id == ID_DEMO:
+                return {"status": "ok", "mensaje": "Usuario DEMO ya registrado"}
+            
             else:
                 return {"status": "ok", "mensaje": "Producto no reconocido"}
         else:
-            # Si es un usuario nuevo comprando directo un pack principal
+            # Si es un usuario nuevo comprando directo
             if product_id in PACKS_LICENCIA:
                 gens = PACKS_LICENCIA[product_id]
                 url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
@@ -307,6 +311,15 @@ async def gumroad_webhook(request: Request):
                 req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
                 urllib.request.urlopen(req_post)
                 return {"status": "ok", "mensaje": f"Nuevo usuario FULL con {gens} creado"}
+            
+            # Si es un usuario nuevo que descargó la Prueba Gratis
+            elif product_id == ID_DEMO:
+                url_post = f"{SUPABASE_URL}/rest/v1/usuarios"
+                body_post = json.dumps({"email": email, "usadas": 0, "limite": 10, "tipo_licencia": "DEMO"}).encode('utf-8')
+                req_post = urllib.request.Request(url_post, data=body_post, headers=headers, method='POST')
+                urllib.request.urlopen(req_post)
+                return {"status": "ok", "mensaje": "Nuevo usuario DEMO (Prueba Gratis) creado"}
+                
             else:
                 return {"status": "error", "mensaje": "Usuario nuevo intentó comprar recarga sin licencia"}
 
