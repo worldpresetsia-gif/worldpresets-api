@@ -9,7 +9,8 @@ from pydantic import BaseModel
 
 app = FastAPI(title="World Presets API")
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# --- Configuración de Groq ---
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
@@ -163,8 +164,8 @@ def verificar_codigo(req: CodigoRequest):
 
 @app.post("/generar")
 def generar_preset(req: PresetRequest):
-    if not OPENROUTER_API_KEY:
-        raise HTTPException(status_code=500, detail="OpenRouter API Key no configurada")
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="Groq API Key no configurada")
     if not req.email:
         raise HTTPException(status_code=403, detail="Se requiere el email")
         
@@ -172,6 +173,7 @@ def generar_preset(req: PresetRequest):
     if not valido:
         raise HTTPException(status_code=403, detail=msj)
 
+    # Lógica de caché (sin cambios)
     prompt_limpio = req.prompt.lower().strip()
     headers_supabase = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
     url_cache = f"{SUPABASE_URL}/rest/v1/cache_presets?consola=eq.{req.consola}&prompt_buscado=eq.{prompt_limpio}"
@@ -238,25 +240,22 @@ GANANCIAS DE EQ OBLIGATORIAS:
 Devuelve SOLO un array JSON.
 Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
-    url_openrouter = "https://openrouter.ai/api/v1/chat/completions"
-    headers_openrouter = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+    # --- Llamada a Groq (OpenAI-compatible) ---
+    url_groq = "https://api.groq.com/openai/v1/chat/completions"
+    headers_groq = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
     
     payload = {
-        "models": [
-            "google/gemini-2.0-flash-exp:free",
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "openrouter/free"
-        ],
+        "model": "llama-3.3-70b-versatile",
         "messages": [{"role": "user", "content": prompt_sistema}],
         "response_format": {"type": "json_object"}
     }
 
     try:
-        req_ai = urllib.request.Request(url_openrouter, data=json.dumps(payload).encode('utf-8'), headers=headers_openrouter, method='POST')
-        with urllib.request.urlopen(req_ai, timeout=120) as response:
+        req_ai = urllib.request.Request(url_groq, data=json.dumps(payload).encode('utf-8'), headers=headers_groq, method='POST')
+        with urllib.request.urlopen(req_ai, timeout=60) as response:
             res_data = json.loads(response.read().decode('utf-8'))
             json_respuesta = res_data["choices"][0]["message"]["content"]
             
@@ -274,11 +273,12 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
 
             cobrar_generacion(req.email, req.hwid) 
             
-            return {"status": "ok", "modelo_usado": res_data.get("model", "openrouter"), "mensaje_limite": "Generación exitosa", "datos": json_respuesta}
+            return {"status": "ok", "modelo_usado": "groq-llama-3.3", "mensaje_limite": "Generación exitosa", "datos": json_respuesta}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error de todas las IAs. Detalle: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error de Groq. Detalle: {str(e)}")
 
+# El webhook de Gumroad se mantiene exactamente igual
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
     try:
