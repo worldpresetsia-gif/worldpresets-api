@@ -230,7 +230,6 @@ Cada objeto debe tener: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g,
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
     try:
-        # NUEVA FORMA DE LEER LOS DATOS (A PRUEBA DE BALAS)
         body = await request.body()
         body_str = body.decode('utf-8')
         parsed = urllib.parse.parse_qs(body_str)
@@ -242,10 +241,11 @@ async def gumroad_webhook(request: Request):
             return {"status": "ok", "mensaje": "Reembolso ignorado"}
         
         email = datos.get("email")
-        product_id = datos.get("product_id")
+        # CORRECCIÓN CRÍTICA: Usar short_product_id (que es el código corto xzkedi)
+        product_id = datos.get("short_product_id") or datos.get("product_id")
         
         if not email or not product_id:
-            print("ERROR: Faltan datos.", datos)
+            print("ERROR: Faltan datos.")
             return {"status": "error", "mensaje": "Faltan datos"}
 
         # IDs REALES DE GUMROAD
