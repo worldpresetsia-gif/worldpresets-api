@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 app = FastAPI(title="World Presets API")
 
+# --- Configuración de las APIs ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -188,7 +189,6 @@ def generar_preset(req: PresetRequest):
                 continue
 
         if not json_respuesta:
-            # AQUÍ ESTÁ LA MAGIA: Si todas fallan, devolvemos 200 OK con un JSON válido para que el programa no crashee.
             return JSONResponse(status_code=200, content={"status": "error", "detail": f"Servidores de IA saturados. Intenta de nuevo en unos minutos."})
 
         try:
@@ -201,7 +201,6 @@ def generar_preset(req: PresetRequest):
         return {"status": "ok", "modelo_usado": modelo_usado, "mensaje_limite": "Generación exitosa", "datos": json_respuesta}
 
     except Exception as e:
-        # Atrapa cualquier error inesperado y devuelve JSON para que el programa no crashee
         return JSONResponse(status_code=200, content={"status": "error", "detail": f"Error interno: {str(e)}"})
 
 @app.post("/gumroad-webhook")
@@ -214,12 +213,19 @@ async def gumroad_webhook(request: Request):
         email = datos.get("email")
         product_id = datos.get("short_product_id") or datos.get("product_id")
         if not email or not product_id: return {"status": "error", "mensaje": "Faltan datos"}
+        
         ID_DEMO = "eqtpr"
-        PACKS_LICENCIA = {"kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000}
+        # ACTUALIZADO CON EL NUEVO ID: knbbu -> 10 generaciones (Solo Programa)
+        PACKS_LICENCIA = {
+            "knbbu": 10,   # <-- NUEVO: Solo Programa (10 gen)
+            "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000
+        }
         RECARGAS = {"duahk": 100}
+        
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
         with urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}", headers=headers)) as response:
             data = json.loads(response.read().decode('utf-8'))
+            
         if len(data) > 0:
             usuario = data[0]
             if product_id in PACKS_LICENCIA:
