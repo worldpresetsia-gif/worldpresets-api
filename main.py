@@ -214,11 +214,19 @@ async def gumroad_webhook(request: Request):
         product_id = datos.get("short_product_id") or datos.get("product_id")
         if not email or not product_id: return {"status": "error", "mensaje": "Faltan datos"}
         
-        ID_DEMO = "eqtpr"
-        # ACTUALIZADO CON EL NUEVO ID: knbbu -> 10 generaciones (Solo Programa)
+        # --- IDs CORREGIDOS ---
+        # Gumroad envía "short_product_id" y el ID real de la Demo es "eqtcpr".
+        # Se mantiene "eqtpr" como compatibilidad por si acaso.
+        ID_DEMO = "eqtcpr"
+        ID_DEMO_ALT = "eqtpr"
+
         PACKS_LICENCIA = {
-            "knbbu": 10,   # <-- NUEVO: Solo Programa (10 gen)
-            "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000
+            "knbbu": 10,
+            "kwcedd": 100,
+            "xsocpy": 200,
+            "sodyxd": 500,
+            "xzkedi": 1000,
+            "wzzlgq": 5000
         }
         RECARGAS = {"duahk": 100}
         
@@ -242,7 +250,7 @@ async def gumroad_webhook(request: Request):
             if product_id in PACKS_LICENCIA:
                 urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/usuarios", data=json.dumps({"email": email, "usadas": 0, "limite": PACKS_LICENCIA[product_id], "tipo_licencia": "FULL"}).encode('utf-8'), headers=headers, method='POST'))
                 return {"status": "ok"}
-            elif product_id == ID_DEMO:
+            elif product_id == ID_DEMO or product_id == ID_DEMO_ALT:
                 urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/usuarios", data=json.dumps({"email": email, "usadas": 0, "limite": 10, "tipo_licencia": "DEMO"}).encode('utf-8'), headers=headers, method='POST'))
                 return {"status": "ok"}
             return {"status": "error"}
