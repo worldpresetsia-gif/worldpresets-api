@@ -11,7 +11,6 @@ from pydantic import BaseModel
 
 app = FastAPI(title="World Presets API")
 
-# --- Configuración de las APIs ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -105,22 +104,11 @@ def construir_prompt(req):
 Genera exactamente {num_presets} variaciones.
 REGLA ESTRICTA: NO devuelvas EQ en 0.0. Debes aplicar EQ quirúrgico, Gates y Compresión con valores reales.
 
-EJEMPLO DE RESPUESTA VÁLIDA (para un bajo):
-[
-  {{
-    "nombre_variacion": "Bajo Rock Activo 1",
-    "gate_on": 1, "comp_on": 1, "eq_on": 1,
-    "eq1_f": 60, "eq1_g": 2.5, "eq1_q": 1.0,
-    "eq2_f": 400, "eq2_g": -3.0, "eq2_q": 1.5,
-    "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0,
-    "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2,
-    "comp_thr": -15, "comp_rat": 4, "gate_thr": -50,
-    "guia_texto": "Ajuste para bajo con dedos."
-  }}
-]
+EJEMPLO DE RESPUESTA VÁLIDA:
+[{{"nombre_variacion": "Bajo Rock Activo 1", "gate_on": 1, "comp_on": 1, "eq_on": 1, "eq1_f": 60, "eq1_g": 2.5, "eq1_q": 1.0, "eq2_f": 400, "eq2_g": -3.0, "eq2_q": 1.5, "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, "guia_texto": "Ajuste para bajo."}}]
 
 MANUAL: Batería HPF 30-80, ataque 3-5k, corte 300-500. Bajo HPF 30, fund 80-100. Guitarras HPF 80-100, mordida 2-4k. Voz HPF 80, intel 3-5k.
-Devuelve SOLO un array JSON válido con {num_presets} objetos que contengan exactamente estas llaves: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
+Devuelve SOLO un array JSON válido con {num_presets} objetos con las llaves: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
 
 def generar_con_gemini(prompt):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
