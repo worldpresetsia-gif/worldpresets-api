@@ -17,7 +17,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 
-# Límites de tokens altos para evitar truncación
 PROVIDER_MAX_TOKENS = {
     "gemini": 65536,
     "groq": 16384,
@@ -104,12 +103,11 @@ def cobrar_generacion(email, hwid):
     except: pass
 
 def construir_prompt_base(req, cantidad, existentes=None):
-    es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
     contexto = ""
     if existentes:
         contexto = f"\n\nATENCIÓN: Ya generaste {len(existentes)} presets: {json.dumps(existentes)}. NO los repitas. Generá SOLO los {cantidad} presets que faltan para completar el total."
 
-    return f"""Eres un Ingeniero de Mezcla Senior. Estás explicando al usuario cómo usar el preset para "{req.prompt}" en su consola {req.consola}.
+    return f"""Eres un Ingeniero de Mezcla Senior con mucha experiencia y un tono súper amigable, como si estuvieras charlando con un colega en el estudio. Estás explicando cómo usar el preset para "{req.prompt}" en su consola {req.consola}.
 Genera exactamente {cantidad} variaciones NUEVAS.
 REGLA ESTRICTA: NO devuelvas EQ en 0.0. Debes aplicar EQ quirúrgico, Gates y Compresión con valores reales.
 
@@ -126,14 +124,16 @@ EJEMPLO DE RESPUESTA VÁLIDA:
       "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
       "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
       "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
-      "guia_texto": "ESPAÑOL: Mirá, para este bajo le di cuerpo en los 60Hz y le corté los 400Hz. El compresor 4:1 mantiene los dedos parejos.\\n\\nTe recomiendo el Delay con Time 0.4s y Mix 15%.\\n\\n--- ENGLISH ---\\n\\nENGLISH: Look, for this bass I gave it body at 60Hz and cut at 400Hz. The 4:1 compressor keeps the fingers even.\\n\\nI recommend the Delay with Time 0.4s and Mix 15%."
+      "guia_texto": "ESPAÑOL: Mirá, acá le di forma al bajo para que tenga ese cuerpo que llena el estudio. Le subí un toque los 60Hz para que sientas el golpe en el pecho, y le corté los 400Hz porque hacían que sonara a caja de cartón. El compresor está en 4:1 con -15dB de umbral, así que te va a controlar los picos del slap sin matar el ataque.\\n\\nSi querés darle un toque más espacial, probá el Plate Reverb de la consola con un Decay de 1.8s y un Mix del 20%. Pero ojo, no te pases, porque en vivo se ensucia todo. El Delay también te puede servir con un Time de 0.35s y un Feedback del 25% si querés algo más psicodélico.\\n\\nUn consejo de vivo: si ves que el bajo se come al bombo, no toques el EQ, bajale el fader 2dB y vas a ver cómo se separan solos. Y el gate en -50dB te va a limpiar el ruido de fondo cuando no estés tocando, pero si sentís que te corta el sustain, bajalo a -55dB.\\n\\n--- ENGLISH ---\\n\\nENGLISH: Look, here I shaped the bass to have that body that fills the studio. I boosted the 60Hz a bit so you feel the punch in your chest, and cut the 400Hz because they made it sound like a cardboard box. The compressor is at 4:1 with a -15dB threshold, so it will control the slap peaks without killing the attack.\\n\\nIf you want a more spatial touch, try the console's Plate Reverb with a 1.8s Decay and 20% Mix. But careful, don't overdo it, because live it gets muddy. The Delay can also work with a 0.35s Time and 25% Feedback if you want something more psychedelic.\\n\\nA live tip: if the bass eats the kick, don't touch the EQ, lower the fader by 2dB and you'll see how they separate on their own. And the gate at -50dB will clean the background noise when you're not playing, but if you feel it cuts the sustain, lower it to -55dB."
   }}
 ]
 
 REGLAS PARA "guia_texto":
-- Bilingüe: Español, separador "--- ENGLISH ---", Inglés.
-- Sección Español: 2 párrafos. Tono coloquial.
-- Sección English: Traducción exacta de los mismos 2 párrafos.
+- Escribí un TEXTO ÚNICO Y FLUIDO, como si le estuvieras explicando a un amigo. Nada de títulos, nada de "PÁRRAFO 1". Solo texto separado por saltos de línea (\\n\\n).
+- Extensión: 3 a 5 párrafos. Sé generoso con los detalles pero sin escribir una enciclopedia.
+- Tono: Coloquial, cercano, técnico pero fácil de entender. Usá "Mirá", "Fijate", "Te recomiendo", "Ojo con".
+- Contenido libre: Explicá por qué hiciste esos ajustes de EQ, para qué sirve ese Compresor, y cómo usar el Gate. Después, recomendá los efectos de la {req.consola} que mejor le queden a este sonido (con parámetros exactos), y sumá consejos pro de mezcla en vivo (paneo, fader, interacción con otros instrumentos, etc).
+- Bilingüe: Español, separador "--- ENGLISH ---", Inglés (traducción exacta).
 {contexto}
 Devuelve SOLO el array JSON con EXACTAMENTE {cantidad} objetos."""
 
@@ -180,17 +180,12 @@ def generar_presets_robusto(req):
                 
                 parsed = json.loads(respuesta)
                 
-                # CASO 1: La IA devolvió exactamente lo que pedimos
                 if isinstance(parsed, list) and len(parsed) == cantidad_faltante:
                     presets_acumulados.extend(parsed)
-                    break # Ya completamos
-                
-                # CASO 2: La IA devolvió de más (truncamos)
+                    break
                 elif isinstance(parsed, list) and len(parsed) > cantidad_faltante:
                     presets_acumulados.extend(parsed[:cantidad_faltante])
                     break
-                
-                # CASO 3: La IA devolvió menos (acumulamos y pedimos el resto)
                 elif isinstance(parsed, list) and 0 < len(parsed) < cantidad_faltante:
                     presets_acumulados.extend(parsed)
                     intentos += 1
@@ -204,12 +199,9 @@ def generar_presets_robusto(req):
                 intentos += 1
                 continue
         
-        # Si ya tenemos todo, no hace falta probar el siguiente proveedor
         if len(presets_acumulados) >= cantidad_total:
             return presets_acumulados[:cantidad_total]
     
-    # --- MODO EMERGENCIA (Si todo falló) ---
-    # Generamos presets base con la lógica del servidor para que el cliente NUNCA vea un error.
     while len(presets_acumulados) < cantidad_total:
         base = {
             "nombre_variacion": f"Preset Base {len(presets_acumulados)+1}",
@@ -254,7 +246,6 @@ def generar_preset(req: PresetRequest):
         prompt_limpio = req.prompt.lower().strip()
         headers_supabase = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
         
-        # Buscar en caché
         try:
             with urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/cache_presets?consola=eq.{req.consola}&prompt_buscado=eq.{prompt_limpio}", headers=headers_supabase)) as response:
                 cache_data = json.loads(response.read().decode('utf-8'))
@@ -265,10 +256,8 @@ def generar_preset(req: PresetRequest):
                         return {"status": "ok", "modelo_usado": "cache", "mensaje_limite": "Generación desde caché", "datos": json.dumps(cached_json)}
         except: pass
 
-        # Orquestador Robusto
         presets_finales = generar_presets_robusto(req)
         
-        # Guardar en caché
         try:
             url_post_cache = f"{SUPABASE_URL}/rest/v1/cache_presets"
             body_post_cache = json.dumps({"consola": req.consola, "prompt_buscado": prompt_limpio, "datos_json": presets_finales}).encode('utf-8')
@@ -283,7 +272,6 @@ def generar_preset(req: PresetRequest):
 
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
-    # ... (El webhook se mantiene igual que en la versión anterior, sin cambios)
     try:
         body = await request.body()
         parsed = urllib.parse.parse_qs(body.decode('utf-8'))
