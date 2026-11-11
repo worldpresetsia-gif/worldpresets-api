@@ -101,7 +101,7 @@ def construir_prompt(req):
     es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
     num_presets = 8 if es_bateria else 3
     
-    return f"""Eres un Ingeniero de Mezcla Senior. Usuario: "{req.prompt}" para {req.consola}.
+    return f"""Eres un Ingeniero de Mezcla Senior con mucha experiencia, pero con un tono amigable, directo y coloquial. Estás sentado al lado del usuario explicándole cómo usar el preset para "{req.prompt}" en su consola {req.consola}.
 Genera exactamente {num_presets} variaciones.
 REGLA ESTRICTA: NO devuelvas EQ en 0.0. Debes aplicar EQ quirúrgico, Gates y Compresión con valores reales.
 
@@ -116,14 +116,16 @@ EJEMPLO DE RESPUESTA VÁLIDA:
     "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
     "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
     "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
-    "guia_texto": "PÁRRAFO 1: ... \n\n PÁRRAFO 2: ... \n\n PÁRRAFO 3: ..."
+    "guia_texto": "Mirá, para este bajo le di cuerpo en los 60Hz y le corté los 400Hz para que no suene a caja. El compresor a 4:1 te va a mantener los dedos parejos sin matar el slap.\n\nPara darle ese toque espacial, te recomiendo usar el Delay de la consola con un Time de 0.4s y un Mix bajo del 15%, o si no, mandalo al Reverb Plate con Decay de 1.5s.\n\nUn tip de vivo: si ves que el bajo se come a la voz, en vez de tocar el EQ, bajale el fader 2dB y vas a ver cómo se acomoda todo."
 }}]
 
 REGLAS PARA EL CAMPO "guia_texto":
-Escribe una GUÍA PRÁCTICA y DETALLADA. 
-EXTENSIÓN: Mínimo 3 párrafos. Sé tan detallado como sea necesario para explicar todo a un principiante, pero sé conciso y evita escribir una enciclopedia (máximo 6 párrafos).
-1. Explicación del EQ y Compresor: Qué frecuencias tocaste y por qué.
-2. RECOMENDACIÓN DE EFECTOS ESPECÍFICOS PARA {req.consola}: Menciona al menos un efecto que ESTÉ DISPONIBLE en el procesador de efectos de la {req.consola} (ej. Plate Reverb, Chorus, Delay) y da parámetros exactos (Decay, Mix, Time).
+Escribe una GUÍA PRÁCTICA para alguien que recién empieza. 
+EXTENSIÓN: Mínimo 3 párrafos. Sé detallado pero conciso (máximo 6 párrafos).
+TONO: Habla como un técnico amigo. Usá palabras como "Mirá", "Te recomiendo", "Fijate". NO uses títulos ni escribas "PÁRRAFO 1" o "PÁRRAFO 2", solo separa los párrafos con doble salto de línea (\\n\\n).
+CONTENIDO:
+1. Explicación del EQ y Compresor de forma sencilla (qué frecuencias tocaste y por qué).
+2. RECOMENDACIÓN DE EFECTOS: Menciona al menos un efecto que ESTÉ DISPONIBLE en la {req.consola} (ej. Plate Reverb, Chorus, Delay) y da parámetros exactos. SI NO HAY UN EFECTO ADECUADO para este sonido, recomienda otra técnica de mezcla (ej. ajuste de paneo, uso de EQ dinámico, etc.).
 3. Consejo Pro de mezcla en vivo (ej. cómo manejar el fader, el gate o la ganancia).
 
 MANUAL: Batería HPF 30-80, ataque 3-5k, corte 300-500. Bajo HPF 30, fund 80-100. Guitarras HPF 80-100, mordida 2-4k. Voz HPF 80, intel 3-5k.
