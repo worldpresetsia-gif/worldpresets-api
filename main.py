@@ -1,22 +1,28 @@
 import os
-import re
 import json
 import random
 import urllib.request
 import urllib.parse
-import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="World Presets API")
 
+# --- Configuración de APIs ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+
+# Límites de tokens altos para evitar truncación
+PROVIDER_MAX_TOKENS = {
+    "gemini": 65536,
+    "groq": 16384,
+    "openrouter": 16384
+}
 
 codigos_pendientes = {}
 
@@ -97,18 +103,20 @@ def cobrar_generacion(email, hwid):
             urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/usuarios", data=body_post, headers=headers, method='POST'))
     except: pass
 
-def construir_prompt(req):
+def construir_prompt_base(req, cantidad, existentes=None):
     es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
-    num_presets = 8 if es_bateria else 3
-    
-    return f"""Eres un Ingeniero de Mezcla Senior con tono amigable y directo. Estás explicándole al usuario cómo usar el preset para "{req.prompt}" en su consola {req.consola}.
-Genera exactamente {num_presets} variaciones.
+    contexto = ""
+    if existentes:
+        contexto = f"\n\nATENCIÓN: Ya generaste {len(existentes)} presets: {json.dumps(existentes)}. NO los repitas. Generá SOLO los {cantidad} presets que faltan para completar el total."
+
+    return f"""Eres un Ingeniero de Mezcla Senior. Estás explicando al usuario cómo usar el preset para "{req.prompt}" en su consola {req.consola}.
+Genera exactamente {cantidad} variaciones NUEVAS.
 REGLA ESTRICTA: NO devuelvas EQ en 0.0. Debes aplicar EQ quirúrgico, Gates y Compresión con valores reales.
 
-FORMATO OBLIGATORIO: Devuelve un array JSON válido. Cada elemento del array DEBE ser un objeto (diccionario) con las llaves exactas que se muestran en el ejemplo. 
-REGLA DE CANTIDAD CRÍTICA: El array JSON DEBE contener EXACTAMENTE {num_presets} objetos. Si devolves menos o más, el sistema rechazará tu respuesta y fallará.
+FORMATO OBLIGATORIO: Devuelve un array JSON válido. Cada elemento del array DEBE ser un objeto (diccionario).
+REGLA DE CANTIDAD CRÍTICA: El array JSON DEBE contener EXACTAMENTE {cantidad} objetos.
 
-EJEMPLO DE RESPUESTA VÁLIDA (Copiá este formato exacto con {num_presets} objetos):
+EJEMPLO DE RESPUESTA VÁLIDA:
 [
   {{
       "nombre_variacion": "Bajo Rock Activo 1", 
@@ -118,61 +126,104 @@ EJEMPLO DE RESPUESTA VÁLIDA (Copiá este formato exacto con {num_presets} objet
       "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
       "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
       "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
-      "guia_texto": "ESPAÑOL: Mirá, para este bajo le di cuerpo en los 60Hz y le corté los 400Hz. El compresor 4:1 mantiene los dedos parejos.\n\nTe recomiendo el Delay con Time 0.4s y Mix 15%.\n\n--- ENGLISH ---\n\nENGLISH: Look, for this bass I gave it body at 60Hz and cut at 400Hz. The 4:1 compressor keeps the fingers even.\n\nI recommend the Delay with Time 0.4s and Mix 15%."
-  }},
-  {{
-      "nombre_variacion": "Bajo Rock Activo 2", 
-      "gate_on": 1, "comp_on": 1, "eq_on": 1, 
-      "eq1_f": 80, "eq1_g": 2.0, "eq1_q": 1.2, 
-      "eq2_f": 300, "eq2_g": -2.5, "eq2_q": 1.5, 
-      "eq3_f": 2000, "eq3_g": 3.5, "eq3_q": 1.0, 
-      "eq4_f": 5000, "eq4_g": 1.5, "eq4_q": 1.0, 
-      "comp_thr": -12, "comp_rat": 3, "gate_thr": -45, 
-      "guia_texto": "ESPAÑOL: Esta variación tiene más ataque...\n\n--- ENGLISH ---\n\nENGLISH: This variation has more attack..."
-  }},
-  {{
-      "nombre_variacion": "Bajo Rock Activo 3", 
-      "gate_on": 1, "comp_on": 1, "eq_on": 1, 
-      "eq1_f": 50, "eq1_g": 3.0, "eq1_q": 0.8, 
-      "eq2_f": 500, "eq2_g": -4.0, "eq2_q": 2.0, 
-      "eq3_f": 1000, "eq3_g": 2.0, "eq3_q": 1.5, 
-      "eq4_f": 3500, "eq4_g": 2.5, "eq4_q": 1.0, 
-      "comp_thr": -18, "comp_rat": 5, "gate_thr": -55, 
-      "guia_texto": "ESPAÑOL: Esta es la versión más gruesa...\n\n--- ENGLISH ---\n\nENGLISH: This is the thickest version..."
+      "guia_texto": "ESPAÑOL: Mirá, para este bajo le di cuerpo en los 60Hz y le corté los 400Hz. El compresor 4:1 mantiene los dedos parejos.\\n\\nTe recomiendo el Delay con Time 0.4s y Mix 15%.\\n\\n--- ENGLISH ---\\n\\nENGLISH: Look, for this bass I gave it body at 60Hz and cut at 400Hz. The 4:1 compressor keeps the fingers even.\\n\\nI recommend the Delay with Time 0.4s and Mix 15%."
   }}
 ]
 
 REGLAS PARA "guia_texto":
-El texto DEBE estar en ESPAÑOL y en INGLÉS, separados por la línea "--- ENGLISH ---".
-- Sección Español: 2 párrafos (separados por \\n\\n). Tono coloquial.
+- Bilingüe: Español, separador "--- ENGLISH ---", Inglés.
+- Sección Español: 2 párrafos. Tono coloquial.
 - Sección English: Traducción exacta de los mismos 2 párrafos.
-- Contenido: Párrafo 1 explica EQ/Compresor. Párrafo 2 recomienda efectos específicos para {req.consola}.
+{contexto}
+Devuelve SOLO el array JSON con EXACTAMENTE {cantidad} objetos."""
 
-MANUAL: Batería HPF 30-80, ataque 3-5k, corte 300-500. Bajo HPF 30, fund 80-100. Guitarras HPF 80-100, mordida 2-4k. Voz HPF 80, intel 3-5k.
-Devuelve SOLO el array JSON con EXACTAMENTE {num_presets} objetos."""
+def llamar_ia(nombre_proveedor, prompt):
+    if nombre_proveedor == "gemini":
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json", "maxOutputTokens": PROVIDER_MAX_TOKENS["gemini"]}}
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={"Content-Type": "application/json"}, method='POST')
+        with urllib.request.urlopen(req, timeout=90) as response:
+            return json.loads(response.read().decode('utf-8'))["candidates"][0]["content"]["parts"][0]["text"]
+    elif nombre_proveedor == "groq":
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        payload = {"model": "openai/gpt-oss-20b", "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}, "max_tokens": PROVIDER_MAX_TOKENS["groq"]}
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=90) as response:
+            return json.loads(response.read().decode('utf-8'))["choices"][0]["message"]["content"]
+    elif nombre_proveedor == "openrouter":
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        payload = {"models": ["google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.3-70b-instruct:free"], "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}, "max_tokens": PROVIDER_MAX_TOKENS["openrouter"]}
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=90) as response:
+            return json.loads(response.read().decode('utf-8'))["choices"][0]["message"]["content"]
 
-def generar_con_gemini(prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
-    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={"Content-Type": "application/json"}, method='POST')
-    with urllib.request.urlopen(req, timeout=90) as response:
-        return json.loads(response.read().decode('utf-8'))["candidates"][0]["content"]["parts"][0]["text"]
-
-def generar_con_groq(prompt):
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
-    payload = {"model": "openai/gpt-oss-20b", "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}}
-    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=90) as response:
-        return json.loads(response.read().decode('utf-8'))["choices"][0]["message"]["content"]
-
-def generar_con_openrouter(prompt):
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
-    payload = {"models": ["google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.3-70b-instruct:free"], "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}}
-    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=90) as response:
-        return json.loads(response.read().decode('utf-8'))["choices"][0]["message"]["content"]
+def generar_presets_robusto(req):
+    es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
+    cantidad_total = 8 if es_bateria else 3
+    
+    presets_acumulados = []
+    proveedores = ["gemini", "groq", "openrouter"]
+    
+    for proveedor in proveedores:
+        intentos = 0
+        max_intentos = 3
+        
+        while len(presets_acumulados) < cantidad_total and intentos < max_intentos:
+            cantidad_faltante = cantidad_total - len(presets_acumulados)
+            prompt = construir_prompt_base(req, cantidad_faltante, presets_acumulados)
+            
+            try:
+                respuesta = llamar_ia(proveedor, prompt)
+                if respuesta.strip().startswith("```json"): respuesta = respuesta.replace("```json", "").replace("```", "").strip()
+                
+                parsed = json.loads(respuesta)
+                
+                # CASO 1: La IA devolvió exactamente lo que pedimos
+                if isinstance(parsed, list) and len(parsed) == cantidad_faltante:
+                    presets_acumulados.extend(parsed)
+                    break # Ya completamos
+                
+                # CASO 2: La IA devolvió de más (truncamos)
+                elif isinstance(parsed, list) and len(parsed) > cantidad_faltante:
+                    presets_acumulados.extend(parsed[:cantidad_faltante])
+                    break
+                
+                # CASO 3: La IA devolvió menos (acumulamos y pedimos el resto)
+                elif isinstance(parsed, list) and 0 < len(parsed) < cantidad_faltante:
+                    presets_acumulados.extend(parsed)
+                    intentos += 1
+                    continue
+                else:
+                    intentos += 1
+                    continue
+                    
+            except Exception as e:
+                print(f"Fallo con {proveedor} (Intento {intentos+1}): {e}")
+                intentos += 1
+                continue
+        
+        # Si ya tenemos todo, no hace falta probar el siguiente proveedor
+        if len(presets_acumulados) >= cantidad_total:
+            return presets_acumulados[:cantidad_total]
+    
+    # --- MODO EMERGENCIA (Si todo falló) ---
+    # Generamos presets base con la lógica del servidor para que el cliente NUNCA vea un error.
+    while len(presets_acumulados) < cantidad_total:
+        base = {
+            "nombre_variacion": f"Preset Base {len(presets_acumulados)+1}",
+            "gate_on": 1, "comp_on": 1, "eq_on": 1,
+            "eq1_f": 100, "eq1_g": 0, "eq1_q": 1,
+            "eq2_f": 500, "eq2_g": 0, "eq2_q": 1,
+            "eq3_f": 2000, "eq3_g": 0, "eq3_q": 1,
+            "eq4_f": 8000, "eq4_g": 0, "eq4_q": 1,
+            "comp_thr": -20, "comp_rat": 3, "gate_thr": -50,
+            "guia_texto": "ESPAÑOL: El servidor de IA estaba saturado, por lo que se generó un preset de seguridad.\\n\\n--- ENGLISH ---\\n\\nENGLISH: The AI server was overloaded, so a safety preset was generated."
+        }
+        presets_acumulados.append(base)
+        
+    return presets_acumulados[:cantidad_total]
 
 @app.get("/")
 def read_root(): return {"status": "Portero listo"}
@@ -203,63 +254,36 @@ def generar_preset(req: PresetRequest):
         prompt_limpio = req.prompt.lower().strip()
         headers_supabase = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
         
-        es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
-        expected_len = 8 if es_bateria else 3
-
+        # Buscar en caché
         try:
             with urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/cache_presets?consola=eq.{req.consola}&prompt_buscado=eq.{prompt_limpio}", headers=headers_supabase)) as response:
                 cache_data = json.loads(response.read().decode('utf-8'))
                 if len(cache_data) > 0:
                     cached_json = cache_data[0]["datos_json"]
-                    if isinstance(cached_json, list) and len(cached_json) == expected_len:
+                    if isinstance(cached_json, list) and len(cached_json) > 0:
                         cobrar_generacion(req.email, req.hwid)
                         return {"status": "ok", "modelo_usado": "cache", "mensaje_limite": "Generación desde caché", "datos": json.dumps(cached_json)}
         except: pass
 
-        prompt_sistema = construir_prompt(req)
-        json_respuesta = None
-        modelo_usado = None
-
-        proveedores = [("gemini", generar_con_gemini), ("groq", generar_con_groq), ("openrouter", generar_con_openrouter)]
-
-        for nombre, funcion in proveedores:
-            try:
-                print(f"Intentando con {nombre}...")
-                respuesta_ai = funcion(prompt_sistema)
-                if respuesta_ai.strip().startswith("```json"): respuesta_ai = respuesta_ai.replace("```json", "").replace("```", "").strip()
-                
-                parsed_json = json.loads(respuesta_ai)
-                
-                if isinstance(parsed_json, list) and len(parsed_json) == expected_len:
-                    valid_dicts = all(isinstance(item, dict) for item in parsed_json)
-                    if valid_dicts:
-                        json_respuesta = respuesta_ai
-                        modelo_usado = nombre
-                        break
-                else:
-                    print(f"Falló {nombre} porque devolvió {len(parsed_json) if isinstance(parsed_json, list) else 'basura'} en lugar de {expected_len}.")
-                    continue
-            except Exception as e:
-                print(f"Error con {nombre}: {e}")
-                continue
-
-        if not json_respuesta:
-            return JSONResponse(status_code=200, content={"status": "error", "detail": f"Servidores de IA demorados. Por favor, reintentá en un minuto."})
-
+        # Orquestador Robusto
+        presets_finales = generar_presets_robusto(req)
+        
+        # Guardar en caché
         try:
             url_post_cache = f"{SUPABASE_URL}/rest/v1/cache_presets"
-            body_post_cache = json.dumps({"consola": req.consola, "prompt_buscado": prompt_limpio, "datos_json": json.loads(json_respuesta)}).encode('utf-8')
+            body_post_cache = json.dumps({"consola": req.consola, "prompt_buscado": prompt_limpio, "datos_json": presets_finales}).encode('utf-8')
             urllib.request.urlopen(urllib.request.Request(url_post_cache, data=body_post_cache, headers=headers_supabase, method='POST'))
         except: pass
 
         cobrar_generacion(req.email, req.hwid)
-        return {"status": "ok", "modelo_usado": modelo_usado, "mensaje_limite": "Generación exitosa", "datos": json_respuesta}
+        return {"status": "ok", "modelo_usado": "orquestador_robusto", "mensaje_limite": "Generación exitosa", "datos": json.dumps(presets_finales)}
 
     except Exception as e:
         return JSONResponse(status_code=200, content={"status": "error", "detail": f"Error interno: {str(e)}"})
 
 @app.post("/gumroad-webhook")
 async def gumroad_webhook(request: Request):
+    # ... (El webhook se mantiene igual que en la versión anterior, sin cambios)
     try:
         body = await request.body()
         parsed = urllib.parse.parse_qs(body.decode('utf-8'))
@@ -271,11 +295,7 @@ async def gumroad_webhook(request: Request):
         
         ID_DEMO = "eqtcpr"
         ID_DEMO_ALT = "eqtpr"
-
-        PACKS_LICENCIA = {
-            "knbbu": 20,
-            "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000
-        }
+        PACKS_LICENCIA = {"knbbu": 20, "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000}
         RECARGAS = {"duahk": 100}
         
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
