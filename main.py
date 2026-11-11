@@ -101,7 +101,6 @@ def construir_prompt(req):
     es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
     num_presets = 8 if es_bateria else 3
     
-    # PROMPT ACTUALIZADO: Se exige una guía técnica completa en el campo "guia_texto"
     return f"""Eres un Ingeniero de Mezcla Senior. Usuario: "{req.prompt}" para {req.consola}.
 Genera exactamente {num_presets} variaciones.
 REGLA ESTRICTA: NO devuelvas EQ en 0.0. Debes aplicar EQ quirúrgico, Gates y Compresión con valores reales.
@@ -115,16 +114,12 @@ EJEMPLO DE RESPUESTA VÁLIDA:
     "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
     "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
     "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
-    "guia_texto": "GUÍA DE MEZCLA: 1. EQ: Esta variación está diseñada para darle cuerpo y definición al bajo. Se aplicó un corte de -3dB en 400Hz para eliminar la 'caja' o sonido nasal. Se realza en 60Hz para el cuerpo del subwoofer y en 1.5kHz para la definición de los dedos. 2. COMPRESOR: Configurado a 4:1 con umbral -15dB para controlar los picos de slap sin quitar dinámica. 3. GATE: Umbral -50dB para cortar el zumbido de los amplificadores. RECOMENDACIÓN: Ajustá la ganancia de entrada según tu bajo; si es activo, bajá el preamp."
+    "guia_texto": "Esta variación está pensada para darle cuerpo al bajo. En el EQ, cortamos las frecuencias medias-bajas (400Hz) para quitar el sonido 'nasal' y resaltamos los graves (60Hz) para que tenga peso. El compresor está suave (4:1) para que los dedos suenen parejos. El Gate corta el ruido de fondo cuando no tocás. Consejo: si tu bajo tiene pastillas activas, bajá un poco la ganancia de entrada para que no sature."
 }}]
 
-REGLAS CRÍTICAS PARA EL CAMPO "guia_texto":
-El campo "guia_texto" DEBE tener al menos 3 párrafos de extensión. Debe explicar detalladamente:
-1. Qué hace cada banda del EQ aplicado (frecuencia, ganancia, Q).
-2. Cómo ajustar el Compresor (umbral y ratio) para este instrumento específico.
-3. Para qué sirve el Gate en este sonido.
-4. Una recomendación extra de mezcla (ej. cómo usar el fader, o si conviene usar un plugin externo).
-NO devuelvas textos cortos. Queremos un manual de mezcla en el archivo de texto.
+REGLAS PARA EL CAMPO "guia_texto":
+Debe ser una guía PRÁCTICA y SENCILLA, de 2 párrafos como máximo, escrita para alguien que recién empieza en la mezcla. 
+Explicá de forma coloquial qué hace el EQ que aplicaste, para qué sirve el Compresor y el Gate en este sonido específico. Terminá con un consejo de mezcla fácil de aplicar.
 
 MANUAL: Batería HPF 30-80, ataque 3-5k, corte 300-500. Bajo HPF 30, fund 80-100. Guitarras HPF 80-100, mordida 2-4k. Voz HPF 80, intel 3-5k.
 Devuelve SOLO un array JSON válido con {num_presets} objetos con las llaves: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
@@ -133,7 +128,7 @@ def generar_con_gemini(prompt):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
     req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={"Content-Type": "application/json"}, method='POST')
-    with urllib.request.urlopen(req, timeout=25) as response:
+    with urllib.request.urlopen(req, timeout=60) as response:
         return json.loads(response.read().decode('utf-8'))["candidates"][0]["content"]["parts"][0]["text"]
 
 def generar_con_groq(prompt):
@@ -141,7 +136,7 @@ def generar_con_groq(prompt):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
     payload = {"model": "openai/gpt-oss-20b", "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}}
     req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=25) as response:
+    with urllib.request.urlopen(req, timeout=60) as response:
         return json.loads(response.read().decode('utf-8'))["choices"][0]["message"]["content"]
 
 def generar_con_openrouter(prompt):
@@ -149,7 +144,7 @@ def generar_con_openrouter(prompt):
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
     payload = {"models": ["google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.3-70b-instruct:free"], "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}}
     req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=25) as response:
+    with urllib.request.urlopen(req, timeout=60) as response:
         return json.loads(response.read().decode('utf-8'))["choices"][0]["message"]["content"]
 
 @app.get("/")
