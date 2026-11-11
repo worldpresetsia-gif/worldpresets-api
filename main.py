@@ -101,35 +101,55 @@ def construir_prompt(req):
     es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
     num_presets = 8 if es_bateria else 3
     
-    return f"""Eres un Ingeniero de Mezcla Senior con mucha experiencia, pero con un tono amigable, directo y coloquial. Estás sentado al lado del usuario explicándole cómo usar el preset para "{req.prompt}" en su consola {req.consola}.
+    return f"""Eres un Ingeniero de Mezcla Senior con tono amigable y directo. Estás explicándole al usuario cómo usar el preset para "{req.prompt}" en su consola {req.consola}.
 Genera exactamente {num_presets} variaciones.
 REGLA ESTRICTA: NO devuelvas EQ en 0.0. Debes aplicar EQ quirúrgico, Gates y Compresión con valores reales.
 
-FORMATO OBLIGATORIO: Devuelve un array JSON válido. Cada elemento del array DEBE ser un objeto (diccionario) con las llaves exactas que se muestran en el ejemplo. NO devuelvas strings sueltos.
+FORMATO OBLIGATORIO: Devuelve un array JSON válido. Cada elemento del array DEBE ser un objeto (diccionario) con las llaves exactas que se muestran en el ejemplo. 
+REGLA DE CANTIDAD CRÍTICA: El array JSON DEBE contener EXACTAMENTE {num_presets} objetos. Si devolves menos o más, el sistema rechazará tu respuesta y fallará.
 
-EJEMPLO DE RESPUESTA VÁLIDA:
-[{{
-    "nombre_variacion": "Bajo Rock Activo 1", 
-    "gate_on": 1, "comp_on": 1, "eq_on": 1, 
-    "eq1_f": 60, "eq1_g": 2.5, "eq1_q": 1.0, 
-    "eq2_f": 400, "eq2_g": -3.0, "eq2_q": 1.5, 
-    "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
-    "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
-    "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
-    "guia_texto": "Mirá, para este bajo le di cuerpo en los 60Hz y le corté los 400Hz para que no suene a caja. El compresor a 4:1 te va a mantener los dedos parejos sin matar el slap.\n\nPara darle ese toque espacial, te recomiendo usar el Delay de la consola con un Time de 0.4s y un Mix bajo del 15%, o si no, mandalo al Reverb Plate con Decay de 1.5s.\n\nUn tip de vivo: si ves que el bajo se come a la voz, en vez de tocar el EQ, bajale el fader 2dB y vas a ver cómo se acomoda todo."
-}}]
+EJEMPLO DE RESPUESTA VÁLIDA (Copiá este formato exacto con {num_presets} objetos):
+[
+  {{
+      "nombre_variacion": "Bajo Rock Activo 1", 
+      "gate_on": 1, "comp_on": 1, "eq_on": 1, 
+      "eq1_f": 60, "eq1_g": 2.5, "eq1_q": 1.0, 
+      "eq2_f": 400, "eq2_g": -3.0, "eq2_q": 1.5, 
+      "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
+      "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
+      "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
+      "guia_texto": "ESPAÑOL: Mirá, para este bajo le di cuerpo en los 60Hz y le corté los 400Hz. El compresor 4:1 mantiene los dedos parejos.\n\nTe recomiendo el Delay con Time 0.4s y Mix 15%.\n\n--- ENGLISH ---\n\nENGLISH: Look, for this bass I gave it body at 60Hz and cut at 400Hz. The 4:1 compressor keeps the fingers even.\n\nI recommend the Delay with Time 0.4s and Mix 15%."
+  }},
+  {{
+      "nombre_variacion": "Bajo Rock Activo 2", 
+      "gate_on": 1, "comp_on": 1, "eq_on": 1, 
+      "eq1_f": 80, "eq1_g": 2.0, "eq1_q": 1.2, 
+      "eq2_f": 300, "eq2_g": -2.5, "eq2_q": 1.5, 
+      "eq3_f": 2000, "eq3_g": 3.5, "eq3_q": 1.0, 
+      "eq4_f": 5000, "eq4_g": 1.5, "eq4_q": 1.0, 
+      "comp_thr": -12, "comp_rat": 3, "gate_thr": -45, 
+      "guia_texto": "ESPAÑOL: Esta variación tiene más ataque...\n\n--- ENGLISH ---\n\nENGLISH: This variation has more attack..."
+  }},
+  {{
+      "nombre_variacion": "Bajo Rock Activo 3", 
+      "gate_on": 1, "comp_on": 1, "eq_on": 1, 
+      "eq1_f": 50, "eq1_g": 3.0, "eq1_q": 0.8, 
+      "eq2_f": 500, "eq2_g": -4.0, "eq2_q": 2.0, 
+      "eq3_f": 1000, "eq3_g": 2.0, "eq3_q": 1.5, 
+      "eq4_f": 3500, "eq4_g": 2.5, "eq4_q": 1.0, 
+      "comp_thr": -18, "comp_rat": 5, "gate_thr": -55, 
+      "guia_texto": "ESPAÑOL: Esta es la versión más gruesa...\n\n--- ENGLISH ---\n\nENGLISH: This is the thickest version..."
+  }}
+]
 
-REGLAS PARA EL CAMPO "guia_texto":
-Escribe una GUÍA PRÁCTICA para alguien que recién empieza. 
-EXTENSIÓN: Mínimo 3 párrafos. Sé detallado pero conciso (máximo 6 párrafos).
-TONO: Habla como un técnico amigo. Usá palabras como "Mirá", "Te recomiendo", "Fijate". NO uses títulos ni escribas "PÁRRAFO 1" o "PÁRRAFO 2", solo separa los párrafos con doble salto de línea (\\n\\n).
-CONTENIDO:
-1. Explicación del EQ y Compresor de forma sencilla (qué frecuencias tocaste y por qué).
-2. RECOMENDACIÓN DE EFECTOS: Menciona al menos un efecto que ESTÉ DISPONIBLE en la {req.consola} (ej. Plate Reverb, Chorus, Delay) y da parámetros exactos. SI NO HAY UN EFECTO ADECUADO para este sonido, recomienda otra técnica de mezcla (ej. ajuste de paneo, uso de EQ dinámico, etc.).
-3. Consejo Pro de mezcla en vivo (ej. cómo manejar el fader, el gate o la ganancia).
+REGLAS PARA "guia_texto":
+El texto DEBE estar en ESPAÑOL y en INGLÉS, separados por la línea "--- ENGLISH ---".
+- Sección Español: 2 párrafos (separados por \\n\\n). Tono coloquial.
+- Sección English: Traducción exacta de los mismos 2 párrafos.
+- Contenido: Párrafo 1 explica EQ/Compresor. Párrafo 2 recomienda efectos específicos para {req.consola}.
 
 MANUAL: Batería HPF 30-80, ataque 3-5k, corte 300-500. Bajo HPF 30, fund 80-100. Guitarras HPF 80-100, mordida 2-4k. Voz HPF 80, intel 3-5k.
-Devuelve SOLO el array JSON con {num_presets} objetos."""
+Devuelve SOLO el array JSON con EXACTAMENTE {num_presets} objetos."""
 
 def generar_con_gemini(prompt):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
@@ -182,12 +202,16 @@ def generar_preset(req: PresetRequest):
 
         prompt_limpio = req.prompt.lower().strip()
         headers_supabase = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+        
+        es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
+        expected_len = 8 if es_bateria else 3
+
         try:
             with urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/cache_presets?consola=eq.{req.consola}&prompt_buscado=eq.{prompt_limpio}", headers=headers_supabase)) as response:
                 cache_data = json.loads(response.read().decode('utf-8'))
                 if len(cache_data) > 0:
                     cached_json = cache_data[0]["datos_json"]
-                    if isinstance(cached_json, list) and len(cached_json) > 0 and isinstance(cached_json[0], dict):
+                    if isinstance(cached_json, list) and len(cached_json) == expected_len:
                         cobrar_generacion(req.email, req.hwid)
                         return {"status": "ok", "modelo_usado": "cache", "mensaje_limite": "Generación desde caché", "datos": json.dumps(cached_json)}
         except: pass
@@ -195,7 +219,6 @@ def generar_preset(req: PresetRequest):
         prompt_sistema = construir_prompt(req)
         json_respuesta = None
         modelo_usado = None
-        errores = []
 
         proveedores = [("gemini", generar_con_gemini), ("groq", generar_con_groq), ("openrouter", generar_con_openrouter)]
 
@@ -206,22 +229,22 @@ def generar_preset(req: PresetRequest):
                 if respuesta_ai.strip().startswith("```json"): respuesta_ai = respuesta_ai.replace("```json", "").replace("```", "").strip()
                 
                 parsed_json = json.loads(respuesta_ai)
-                if not isinstance(parsed_json, list):
-                    raise Exception("La IA no devolvió una lista.")
-                for item in parsed_json:
-                    if not isinstance(item, dict):
-                        raise Exception("La IA devolvió un elemento que no es un diccionario.")
-
-                json_respuesta = respuesta_ai
-                modelo_usado = nombre
-                break
+                
+                if isinstance(parsed_json, list) and len(parsed_json) == expected_len:
+                    valid_dicts = all(isinstance(item, dict) for item in parsed_json)
+                    if valid_dicts:
+                        json_respuesta = respuesta_ai
+                        modelo_usado = nombre
+                        break
+                else:
+                    print(f"Falló {nombre} porque devolvió {len(parsed_json) if isinstance(parsed_json, list) else 'basura'} en lugar de {expected_len}.")
+                    continue
             except Exception as e:
-                errores.append(f"{nombre}: {str(e)}")
-                print(f"Falló {nombre} (o formato incorrecto): {e}")
+                print(f"Error con {nombre}: {e}")
                 continue
 
         if not json_respuesta:
-            return JSONResponse(status_code=200, content={"status": "error", "detail": f"Servidores de IA saturados o respuesta inválida. Intenta de nuevo."})
+            return JSONResponse(status_code=200, content={"status": "error", "detail": f"Servidores de IA demorados. Por favor, reintentá en un minuto."})
 
         try:
             url_post_cache = f"{SUPABASE_URL}/rest/v1/cache_presets"
