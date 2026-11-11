@@ -100,12 +100,31 @@ def cobrar_generacion(email, hwid):
 def construir_prompt(req):
     es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
     num_presets = 8 if es_bateria else 3
+    
+    # PROMPT ACTUALIZADO: Se exige una guía técnica completa en el campo "guia_texto"
     return f"""Eres un Ingeniero de Mezcla Senior. Usuario: "{req.prompt}" para {req.consola}.
 Genera exactamente {num_presets} variaciones.
 REGLA ESTRICTA: NO devuelvas EQ en 0.0. Debes aplicar EQ quirúrgico, Gates y Compresión con valores reales.
 
 EJEMPLO DE RESPUESTA VÁLIDA:
-[{{"nombre_variacion": "Bajo Rock Activo 1", "gate_on": 1, "comp_on": 1, "eq_on": 1, "eq1_f": 60, "eq1_g": 2.5, "eq1_q": 1.0, "eq2_f": 400, "eq2_g": -3.0, "eq2_q": 1.5, "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, "guia_texto": "Ajuste para bajo."}}]
+[{{
+    "nombre_variacion": "Bajo Rock Activo 1", 
+    "gate_on": 1, "comp_on": 1, "eq_on": 1, 
+    "eq1_f": 60, "eq1_g": 2.5, "eq1_q": 1.0, 
+    "eq2_f": 400, "eq2_g": -3.0, "eq2_q": 1.5, 
+    "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
+    "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
+    "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
+    "guia_texto": "GUÍA DE MEZCLA: 1. EQ: Esta variación está diseñada para darle cuerpo y definición al bajo. Se aplicó un corte de -3dB en 400Hz para eliminar la 'caja' o sonido nasal. Se realza en 60Hz para el cuerpo del subwoofer y en 1.5kHz para la definición de los dedos. 2. COMPRESOR: Configurado a 4:1 con umbral -15dB para controlar los picos de slap sin quitar dinámica. 3. GATE: Umbral -50dB para cortar el zumbido de los amplificadores. RECOMENDACIÓN: Ajustá la ganancia de entrada según tu bajo; si es activo, bajá el preamp."
+}}]
+
+REGLAS CRÍTICAS PARA EL CAMPO "guia_texto":
+El campo "guia_texto" DEBE tener al menos 3 párrafos de extensión. Debe explicar detalladamente:
+1. Qué hace cada banda del EQ aplicado (frecuencia, ganancia, Q).
+2. Cómo ajustar el Compresor (umbral y ratio) para este instrumento específico.
+3. Para qué sirve el Gate en este sonido.
+4. Una recomendación extra de mezcla (ej. cómo usar el fader, o si conviene usar un plugin externo).
+NO devuelvas textos cortos. Queremos un manual de mezcla en el archivo de texto.
 
 MANUAL: Batería HPF 30-80, ataque 3-5k, corte 300-500. Bajo HPF 30, fund 80-100. Guitarras HPF 80-100, mordida 2-4k. Voz HPF 80, intel 3-5k.
 Devuelve SOLO un array JSON válido con {num_presets} objetos con las llaves: nombre_variacion, gate_on, comp_on, eq_on, eq1_f, eq1_g, eq1_q, eq2_f, eq2_g, eq2_q, eq3_f, eq3_g, eq3_q, eq4_f, eq4_g, eq4_q, comp_thr, comp_rat, gate_thr, guia_texto."""
