@@ -107,7 +107,7 @@ def construir_prompt_base(req, cantidad, existentes=None):
     if existentes:
         contexto = f"\n\nATENCIÓN: Ya generaste {len(existentes)} presets: {json.dumps(existentes)}. NO los repitas. Generá SOLO los {cantidad} presets que faltan para completar el total."
 
-    return f"""Eres un Ingeniero de Mezcla Senior con mucha experiencia y un tono súper amigable, como si estuvieras charlando con un colega en el estudio. Estás explicando cómo usar el preset para "{req.prompt}" en su consola {req.consola}.
+    return f"""Eres un Ingeniero de Mezcla Senior con mucha experiencia, y tu rol es ser un INSTRUCTOR para alguien que recién empieza. Estás enseñándole cómo usar el preset que generaste para "{req.prompt}" en su consola {req.consola}.
 Genera exactamente {cantidad} variaciones NUEVAS.
 REGLA ESTRICTA: NO devuelvas EQ en 0.0. Debes aplicar EQ quirúrgico, Gates y Compresión con valores reales.
 
@@ -124,15 +124,20 @@ EJEMPLO DE RESPUESTA VÁLIDA:
       "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
       "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
       "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
-      "guia_texto": "ESPAÑOL: Mirá, acá le di forma al bajo para que tenga ese cuerpo que llena el estudio. Le subí un toque los 60Hz para que sientas el golpe en el pecho, y le corté los 400Hz porque hacían que sonara a caja de cartón. El compresor está en 4:1 con -15dB de umbral, así que te va a controlar los picos del slap sin matar el ataque.\\n\\nSi querés darle un toque más espacial, probá el Plate Reverb de la consola con un Decay de 1.8s y un Mix del 20%. Pero ojo, no te pases, porque en vivo se ensucia todo. El Delay también te puede servir con un Time de 0.35s y un Feedback del 25% si querés algo más psicodélico.\\n\\nUn consejo de vivo: si ves que el bajo se come al bombo, no toques el EQ, bajale el fader 2dB y vas a ver cómo se separan solos. Y el gate en -50dB te va a limpiar el ruido de fondo cuando no estés tocando, pero si sentís que te corta el sustain, bajalo a -55dB.\\n\\n--- ENGLISH ---\\n\\nENGLISH: Look, here I shaped the bass to have that body that fills the studio. I boosted the 60Hz a bit so you feel the punch in your chest, and cut the 400Hz because they made it sound like a cardboard box. The compressor is at 4:1 with a -15dB threshold, so it will control the slap peaks without killing the attack.\\n\\nIf you want a more spatial touch, try the console's Plate Reverb with a 1.8s Decay and 20% Mix. But careful, don't overdo it, because live it gets muddy. The Delay can also work with a 0.35s Time and 25% Feedback if you want something more psychedelic.\\n\\nA live tip: if the bass eats the kick, don't touch the EQ, lower the fader by 2dB and you'll see how they separate on their own. And the gate at -50dB will clean the background noise when you're not playing, but if you feel it cuts the sustain, lower it to -55dB."
+      "guia_texto": "ESPAÑOL: Che, este preset está pensado para que el bajo tenga cuerpo y se sienta el golpe. Cuando lo cargues en tu XR18, escuchalo con auriculares y fijate que los graves suenan bien sólidos pero los medios no quedan embarrados. Si sentís que le falta un poco de presencia, no toques el EQ: subí 2dB el fader del canal y listo.\\n\\nPara darle un toque más profesional, te recomiendo que abras el FX1 de tu consola y le pongas un 'Plate Reverb' con Decay de 1.8s y Mix del 20%. Le va a dar un aire lindo sin ensuciar. Si querés algo más psicodélico, en el FX2 probá un 'Chorus' con Rate de 0.4Hz y Depth del 30%.\\n\\nOjo con el Gate: está en -50dB, lo que significa que cuando el bajista deja de tocar, el canal se silencia solo. Si notás que te está cortando el sustain de las notas largas, subí el Gate a -55dB (menos agresivo). Y si te meten ruido de masa, bajalo a -45dB.\\n\\n--- ENGLISH ---\\n\\nENGLISH: Hey, this preset is designed so the bass has body and feels the punch. When you load it on your XR18, listen with headphones and notice that the lows sound solid but the mids are not muddy. If you feel it lacks presence, don't touch the EQ: raise the channel fader by 2dB and that's it.\\n\\nTo give it a more professional touch, I recommend opening FX1 on your console and setting it to 'Plate Reverb' with a 1.8s Decay and 20% Mix. It will give it a nice air without making it muddy. If you want something more psychedelic, on FX2 try a 'Chorus' with 0.4Hz Rate and 30% Depth.\\n\\nWatch out for the Gate: it's at -50dB, which means when the bassist stops playing, the channel mutes itself. If you notice it's cutting the sustain of long notes, raise the Gate to -55dB (less aggressive). And if there's ground noise, lower it to -45dB."
   }}
 ]
 
-REGLAS PARA "guia_texto":
-- Escribí un TEXTO ÚNICO Y FLUIDO, como si le estuvieras explicando a un amigo. Nada de títulos, nada de "PÁRRAFO 1". Solo texto separado por saltos de línea (\\n\\n).
-- Extensión: 3 a 5 párrafos. Sé generoso con los detalles pero sin escribir una enciclopedia.
-- Tono: Coloquial, cercano, técnico pero fácil de entender. Usá "Mirá", "Fijate", "Te recomiendo", "Ojo con".
-- Contenido libre: Explicá por qué hiciste esos ajustes de EQ, para qué sirve ese Compresor, y cómo usar el Gate. Después, recomendá los efectos de la {req.consola} que mejor le queden a este sonido (con parámetros exactos), y sumá consejos pro de mezcla en vivo (paneo, fader, interacción con otros instrumentos, etc).
+REGLAS CRÍTICAS PARA "guia_texto":
+- PROHIBIDO narrar lo que hiciste ("subí 200Hz", "recorté 600Hz", "le puse un boost"). El usuario no quiere saber qué hiciste, quiere saber CÓMO USARLO y QUÉ ESCUCHAR.
+- PROHIBIDO usar frases como "le di", "apliqué", "configuré". Cambialas por "fijate que", "cuando lo cargues", "si sentís que", "probá con".
+- Escribí como un PROFESOR que le explica a un alumno novato. Tono: "Che", "Mirá", "Ojo", "Fijate", "Te recomiendo".
+- Extensión: 3 a 5 párrafos separados por doble salto de línea (\\n\\n).
+- Contenido OBLIGATORIO:
+  1. Cómo escuchar el preset al cargarlo (qué tiene que sentir con los graves/medios/agudos).
+  2. Recomendación de efectos de la {req.consola} con parámetros exactos (FX1, FX2, Reverb, Delay, Chorus, etc.) y para qué sirven en este sonido.
+  3. Cómo ajustar el Gate y el Compresor SI algo no le gusta ("si te corta el sustain, subí el gate a -55dB", etc.).
+  4. Un consejo de vivo (paneo, fader, interacción con otros instrumentos).
 - Bilingüe: Español, separador "--- ENGLISH ---", Inglés (traducción exacta).
 {contexto}
 Devuelve SOLO el array JSON con EXACTAMENTE {cantidad} objetos."""
