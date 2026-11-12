@@ -102,10 +102,21 @@ def cobrar_generacion(email, hwid):
             urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/usuarios", data=body_post, headers=headers, method='POST'))
     except: pass
 
+def obtener_lista_efectos(consola):
+    consola_upper = consola.upper()
+    if "WING" in consola_upper:
+        return "Hall, Room, Chamber, Plate, Concert, Ambience, Stereo Delay, Ultratap Delay, Tape Delay, Oilcan Delay, BBD Delay, Dimension CRS, Stereo Chorus, Stereo Flanger, Rotary Speaker, Phaser, Stereo Pitch, Dual Pitch, Pitch Fix, Double Vocal"
+    elif "XR18" in consola_upper or "X32" in consola_upper:
+        return "Hall, Plate, Vintage Reverb, Vintage Room, Ambience, Gated Reverb, Reverse Reverb, Stereo Delay, 3-tap delay, Stereo Chorus, Stereo Flanger, Stereo Phaser, Mood Filter, Rotary Speaker, Tremolo/Panner, Delay & Chamber, Chorus & Chamber, Flanger & Chamber, Delay & Chorus, Delay & Flanger, Dual Graphic EQ, Stereo Graphic EQ, Dual TruEQ, Stereo TruEQ, Wave Designer, Precision Limiter, Dual Enhancer, Stereo Enhancer, Dual Exciter, Stereo Exciter, Stereo Imager, Dual Guitar Amp, Stereo Guitar Amp, Dual Tube Stage, Stereo Tube Stage, Dual Pitch, Stereo Pitch"
+    else:
+        return "Hall, Plate, Vintage Reverb, Vintage Room, Ambience, Gated Reverb, Reverse Reverb, Stereo Delay, 3-tap delay, Stereo Chorus, Stereo Flanger, Stereo Phaser"
+
 def construir_prompt_base(req, cantidad, existentes=None):
     contexto = ""
     if existentes:
         contexto = f"\n\nATENCIÓN: Ya generaste {len(existentes)} presets: {json.dumps(existentes)}. NO los repitas. Generá SOLO los {cantidad} presets que faltan para completar el total."
+
+    efectos = obtener_lista_efectos(req.consola)
 
     return f"""Eres un Ingeniero de Mezcla Senior con mucha experiencia, y tu rol es ser un INSTRUCTOR para alguien que recién empieza. Estás enseñándole cómo usar el preset que generaste para "{req.prompt}" en su consola {req.consola}.
 Genera exactamente {cantidad} variaciones NUEVAS.
@@ -124,18 +135,17 @@ EJEMPLO DE RESPUESTA VÁLIDA:
       "eq3_f": 1500, "eq3_g": 3.0, "eq3_q": 1.0, 
       "eq4_f": 4000, "eq4_g": 2.0, "eq4_q": 1.2, 
       "comp_thr": -15, "comp_rat": 4, "gate_thr": -50, 
-      "guia_texto": "ESPAÑOL: Che, este preset está pensado para que el bajo tenga cuerpo y se sienta el golpe. Cuando lo cargues en tu XR18, escuchalo con auriculares y fijate que los graves suenan bien sólidos pero los medios no quedan embarrados. Si sentís que le falta un poco de presencia, no toques el EQ: subí 2dB el fader del canal y listo.\\n\\nPara darle un toque más profesional, te recomiendo que abras el FX1 de tu consola y le pongas un 'Plate Reverb' con Decay de 1.8s y Mix del 20%. Le va a dar un aire lindo sin ensuciar. Si querés algo más psicodélico, en el FX2 probá un 'Chorus' con Rate de 0.4Hz y Depth del 30%.\\n\\nOjo con el Gate: está en -50dB, lo que significa que cuando el bajista deja de tocar, el canal se silencia solo. Si notás que te está cortando el sustain de las notas largas, subí el Gate a -55dB (menos agresivo). Y si te meten ruido de masa, bajalo a -45dB.\\n\\n--- ENGLISH ---\\n\\nENGLISH: Hey, this preset is designed so the bass has body and feels the punch. When you load it on your XR18, listen with headphones and notice that the lows sound solid but the mids are not muddy. If you feel it lacks presence, don't touch the EQ: raise the channel fader by 2dB and that's it.\\n\\nTo give it a more professional touch, I recommend opening FX1 on your console and setting it to 'Plate Reverb' with a 1.8s Decay and 20% Mix. It will give it a nice air without making it muddy. If you want something more psychedelic, on FX2 try a 'Chorus' with 0.4Hz Rate and 30% Depth.\\n\\nWatch out for the Gate: it's at -50dB, which means when the bassist stops playing, the channel mutes itself. If you notice it's cutting the sustain of long notes, raise the Gate to -55dB (less aggressive). And if there's ground noise, lower it to -45dB."
+      "guia_texto": "ESPAÑOL: Mirá, este preset está pensado para que el bajo tenga cuerpo y se sienta el golpe. Cuando lo cargues en tu XR18, escuchalo con auriculares y fijate que los graves suenan bien sólidos pero los medios no quedan embarrados. Si sentís que le falta un poco de presencia, no toques el EQ: subí 2dB el fader del canal y listo.\\n\\nPara darle un toque más profesional, te recomiendo que uses el efecto 'Plate' con Decay de 1.8s y Mix del 20%. Le va a dar un aire lindo sin ensuciar. Si querés algo más psicodélico, probá el 'Chorus' con Rate de 0.4Hz y Depth del 30%.\\n\\nOjo con el Gate: está en -50dB, lo que significa que cuando el bajista deja de tocar, el canal se silencia solo. Si notás que te está cortando el sustain de las notas largas, subí el Gate a -55dB (menos agresivo). Y si te meten ruido de masa, bajalo a -45dB.\\n\\n--- ENGLISH ---\\n\\nENGLISH: Look, this preset is designed so the bass has body and feels the punch. When you load it on your XR18, listen with headphones and notice that the lows sound solid but the mids are not muddy. If you feel it lacks presence, don't touch the EQ: raise the channel fader by 2dB and that's it.\\n\\nTo give it a more professional touch, I recommend using the 'Plate' effect with a 1.8s Decay and 20% Mix. It will give it a nice air without making it muddy. If you want something more psychedelic, try the 'Chorus' with 0.4Hz Rate and 30% Depth.\\n\\nWatch out for the Gate: it's at -50dB, which means when the bassist stops playing, the channel mutes itself. If you notice it's cutting the sustain of long notes, raise the Gate to -55dB (less aggressive). And if there's ground noise, lower it to -45dB."
   }}
 ]
 
 REGLAS CRÍTICAS PARA "guia_texto":
-- PROHIBIDO narrar lo que hiciste ("subí 200Hz", "recorté 600Hz", "le puse un boost"). El usuario no quiere saber qué hiciste, quiere saber CÓMO USARLO y QUÉ ESCUCHAR.
-- PROHIBIDO usar frases como "le di", "apliqué", "configuré". Cambialas por "fijate que", "cuando lo cargues", "si sentís que", "probá con".
-- Escribí como un PROFESOR que le explica a un alumno novato. Tono: "Che", "Mirá", "Ojo", "Fijate", "Te recomiendo".
+- PROHIBIDO narrar lo que hiciste con el EQ, Compresor o Gate ("subí 200Hz", "recorté 600Hz"). El usuario no quiere saber qué hiciste, quiere saber CÓMO USARLO y QUÉ ESCUCHAR.
+- Escribí como un PROFESOR que le explica a un alumno novato. Tono: "Mirá", "Ojo", "Fijate", "Te recomiendo", "Escuchá".
 - Extensión: 3 a 5 párrafos separados por doble salto de línea (\\n\\n).
 - Contenido OBLIGATORIO:
   1. Cómo escuchar el preset al cargarlo (qué tiene que sentir con los graves/medios/agudos).
-  2. Recomendación de efectos de la {req.consola} con parámetros exactos (FX1, FX2, Reverb, Delay, Chorus, etc.) y para qué sirven en este sonido.
+  2. RECOMENDACIÓN DE EFECTOS: Mencioná el nombre EXACTO de un efecto de la consola. Usá SOLO los nombres de esta lista: [{efectos}]. PROHIBIDO INVENTAR NOMBRES o usar slots (FX1, FX2, etc.). Da parámetros exactos (Decay, Mix, Time, Rate, Depth).
   3. Cómo ajustar el Gate y el Compresor SI algo no le gusta ("si te corta el sustain, subí el gate a -55dB", etc.).
   4. Un consejo de vivo (paneo, fader, interacción con otros instrumentos).
 - Bilingüe: Español, separador "--- ENGLISH ---", Inglés (traducción exacta).
