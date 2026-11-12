@@ -298,7 +298,13 @@ async def gumroad_webhook(request: Request):
         
         ID_DEMO = "eqtcpr"
         ID_DEMO_ALT = "eqtpr"
-        PACKS_LICENCIA = {"knbbu": 20, "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000}
+        
+        # AGREGADO lknbbu JUNTO A knbbu
+        PACKS_LICENCIA = {
+            "knbbu": 20, 
+            "lknbbu": 20,
+            "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000
+        }
         RECARGAS = {"duahk": 100}
         
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
