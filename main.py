@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 app = FastAPI(title="World Presets API")
 
-# --- Configuración de APIs ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -17,12 +16,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 
-PROVIDER_MAX_TOKENS = {
-    "gemini": 65536,
-    "groq": 16384,
-    "openrouter": 16384
-}
-
+PROVIDER_MAX_TOKENS = {"gemini": 65536, "groq": 16384, "openrouter": 16384}
 codigos_pendientes = {}
 
 class EmailRequest(BaseModel):
@@ -42,12 +36,7 @@ def enviar_email_brevo(destinatario, codigo):
     if not BREVO_API_KEY: return False
     url = "https://api.brevo.com/v3/smtp/email"
     headers = {"accept": "application/json", "api-key": BREVO_API_KEY, "content-type": "application/json"}
-    data = {
-        "sender": {"name": "World Presets", "email": "worldpresets.ia@gmail.com"},
-        "to": [{"email": destinatario}],
-        "subject": "Tu código de verificación - World Presets",
-        "htmlContent": f"<html><body><h2>Tu código es:</h2><h1>{codigo}</h1></body></html>"
-    }
+    data = {"sender": {"name": "World Presets", "email": "worldpresets.ia@gmail.com"}, "to": [{"email": destinatario}], "subject": "Tu código de verificación - World Presets", "htmlContent": f"<html><body><h2>Tu código es:</h2><h1>{codigo}</h1></body></html>"}
     req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
     try:
         with urllib.request.urlopen(req) as response: return True
@@ -69,6 +58,7 @@ def registrar_usuario_en_supabase(email):
 def verificar_limite(email, hwid, consola_solicitada):
     if email == "test@test.com": return True, "Usuario de prueba aceptado (Ilimitado)"
     if not SUPABASE_URL or not SUPABASE_KEY: return False, "Faltan variables de Supabase"
+    
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
     try:
         with urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}", headers=headers)) as response:
@@ -78,10 +68,16 @@ def verificar_limite(email, hwid, consola_solicitada):
     if len(data) > 0:
         usuario = data[0]
         hwid_guardado = usuario.get("hwid")
-        if hwid_guardado and hwid_guardado != hwid: return False, "Email en otra PC. Contactá a soporte."
-        if not hwid_guardado and hwid:
-            try: urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}", data=json.dumps({"hwid": hwid}).encode('utf-8'), headers=headers, method='PATCH'))
-            except: pass
+        
+        # --- SOLUCIÓN ESTRUCTURAL: Auto-actualización de HWID ---
+        # Si el usuario se autenticó (tiene email válido) pero cambió de PC o de red,
+        # simplemente actualizamos su HWID al nuevo sin bloquearlo.
+        if hwid_guardado != hwid:
+            try: 
+                urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/usuarios?email=eq.{email}", data=json.dumps({"hwid": hwid}).encode('utf-8'), headers=headers, method='PATCH'))
+            except: 
+                pass
+
         if usuario.get("tipo_licencia") == "XR18" and consola_solicitada not in ["XR18 - MR18", "X32 - M32", "X32", "XR18"]:
             return False, "Licencia solo para XR18."
         if usuario["usadas"] >= usuario["limite"]: return False, f"Límite alcanzado ({usuario['limite']} gen)."
@@ -115,7 +111,6 @@ def construir_prompt_base(req, cantidad, existentes=None):
     contexto = ""
     if existentes:
         contexto = f"\n\nATENCIÓN: Ya generaste {len(existentes)} presets: {json.dumps(existentes)}. NO los repitas. Generá SOLO los {cantidad} presets que faltan para completar el total."
-
     efectos = obtener_lista_efectos(req.consola)
 
     return f"""Eres un Ingeniero de Mezcla Senior con mucha experiencia, y tu rol es ser un INSTRUCTOR para alguien que recién empieza. Estás enseñándole cómo usar el preset que generaste para "{req.prompt}" en su consola {req.consola}.
@@ -138,17 +133,16 @@ EJEMPLO DE RESPUESTA VÁLIDA:
       "guia_texto": "ESPAÑOL: Mirá, este preset está pensado para que el bajo tenga cuerpo y se sienta el golpe. Cuando lo cargues en tu XR18, escuchalo con auriculares y fijate que los graves suenan bien sólidos pero los medios no quedan embarrados. Si sentís que le falta un poco de presencia, no toques el EQ: subí 2dB el fader del canal y listo.\\n\\nPara darle un toque más profesional, te recomiendo que uses el efecto 'Plate' con Decay de 1.8s y Mix del 20%. Le va a dar un aire lindo sin ensuciar. Si querés algo más psicodélico, probá el 'Chorus' con Rate de 0.4Hz y Depth del 30%.\\n\\nOjo con el Gate: está en -50dB, lo que significa que cuando el bajista deja de tocar, el canal se silencia solo. Si notás que te está cortando el sustain de las notas largas, subí el Gate a -55dB (menos agresivo). Y si te meten ruido de masa, bajalo a -45dB.\\n\\n--- ENGLISH ---\\n\\nENGLISH: Look, this preset is designed so the bass has body and feels the punch. When you load it on your XR18, listen with headphones and notice that the lows sound solid but the mids are not muddy. If you feel it lacks presence, don't touch the EQ: raise the channel fader by 2dB and that's it.\\n\\nTo give it a more professional touch, I recommend using the 'Plate' effect with a 1.8s Decay and 20% Mix. It will give it a nice air without making it muddy. If you want something more psychedelic, try the 'Chorus' with 0.4Hz Rate and 30% Depth.\\n\\nWatch out for the Gate: it's at -50dB, which means when the bassist stops playing, the channel mutes itself. If you notice it's cutting the sustain of long notes, raise the Gate to -55dB (less aggressive). And if there's ground noise, lower it to -45dB."
   }}
 ]
-
 REGLAS CRÍTICAS PARA "guia_texto":
-- PROHIBIDO narrar lo que hiciste con el EQ, Compresor o Gate ("subí 200Hz", "recorté 600Hz"). El usuario no quiere saber qué hiciste, quiere saber CÓMO USARLO y QUÉ ESCUCHAR.
+- PROHIBIDO narrar lo que hiciste con el EQ, Compresor o Gate ("subí 200Hz"). El usuario no quiere saber qué hiciste, quiere saber CÓMO USARLO y QUÉ ESCUCHAR.
 - Escribí como un PROFESOR que le explica a un alumno novato. Tono: "Mirá", "Ojo", "Fijate", "Te recomiendo", "Escuchá".
 - Extensión: 3 a 5 párrafos separados por doble salto de línea (\\n\\n).
 - Contenido OBLIGATORIO:
-  1. Cómo escuchar el preset al cargarlo (qué tiene que sentir con los graves/medios/agudos).
-  2. RECOMENDACIÓN DE EFECTOS: Mencioná el nombre EXACTO de un efecto de la consola. Usá SOLO los nombres de esta lista: [{efectos}]. PROHIBIDO INVENTAR NOMBRES o usar slots (FX1, FX2, etc.). Da parámetros exactos (Decay, Mix, Time, Rate, Depth).
-  3. Cómo ajustar el Gate y el Compresor SI algo no le gusta ("si te corta el sustain, subí el gate a -55dB", etc.).
-  4. Un consejo de vivo (paneo, fader, interacción con otros instrumentos).
-- Bilingüe: Español, separador "--- ENGLISH ---", Inglés (traducción exacta).
+  1. Cómo escuchar el preset al cargarlo.
+  2. RECOMENDACIÓN DE EFECTOS: Mencioná el nombre EXACTO de un efecto. Usá SOLO los nombres de esta lista: [{efectos}]. PROHIBIDO INVENTAR NOMBRES o usar slots. Da parámetros exactos.
+  3. Cómo ajustar el Gate y el Compresor SI algo no le gusta.
+  4. Un consejo de vivo.
+- Bilingüe: Español, separador "--- ENGLISH ---", Inglés.
 {contexto}
 Devuelve SOLO el array JSON con EXACTAMENTE {cantidad} objetos."""
 
@@ -177,24 +171,19 @@ def llamar_ia(nombre_proveedor, prompt):
 def generar_presets_robusto(req):
     es_bateria = any(p in req.prompt.lower() for p in ["bateria","batería","drumkit","drums","kit"])
     cantidad_total = 8 if es_bateria else 3
-    
     presets_acumulados = []
     proveedores = ["gemini", "groq", "openrouter"]
     
     for proveedor in proveedores:
         intentos = 0
         max_intentos = 3
-        
         while len(presets_acumulados) < cantidad_total and intentos < max_intentos:
             cantidad_faltante = cantidad_total - len(presets_acumulados)
             prompt = construir_prompt_base(req, cantidad_faltante, presets_acumulados)
-            
             try:
                 respuesta = llamar_ia(proveedor, prompt)
                 if respuesta.strip().startswith("```json"): respuesta = respuesta.replace("```json", "").replace("```", "").strip()
-                
                 parsed = json.loads(respuesta)
-                
                 if isinstance(parsed, list) and len(parsed) == cantidad_faltante:
                     presets_acumulados.extend(parsed)
                     break
@@ -208,12 +197,10 @@ def generar_presets_robusto(req):
                 else:
                     intentos += 1
                     continue
-                    
             except Exception as e:
                 print(f"Fallo con {proveedor} (Intento {intentos+1}): {e}")
                 intentos += 1
                 continue
-        
         if len(presets_acumulados) >= cantidad_total:
             return presets_acumulados[:cantidad_total]
     
@@ -229,7 +216,6 @@ def generar_presets_robusto(req):
             "guia_texto": "ESPAÑOL: El servidor de IA estaba saturado, por lo que se generó un preset de seguridad.\\n\\n--- ENGLISH ---\\n\\nENGLISH: The AI server was overloaded, so a safety preset was generated."
         }
         presets_acumulados.append(base)
-        
     return presets_acumulados[:cantidad_total]
 
 @app.get("/")
@@ -254,13 +240,11 @@ def verificar_codigo(req: CodigoRequest):
 def generar_preset(req: PresetRequest):
     try:
         if not req.email: return JSONResponse(status_code=200, content={"status": "error", "detail": "Se requiere el email"})
-        
         valido, msj = verificar_limite(req.email, req.hwid, req.consola)
         if not valido: return JSONResponse(status_code=200, content={"status": "error", "detail": msj})
 
         prompt_limpio = req.prompt.lower().strip()
         headers_supabase = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
-        
         try:
             with urllib.request.urlopen(urllib.request.Request(f"{SUPABASE_URL}/rest/v1/cache_presets?consola=eq.{req.consola}&prompt_buscado=eq.{prompt_limpio}", headers=headers_supabase)) as response:
                 cache_data = json.loads(response.read().decode('utf-8'))
@@ -281,7 +265,6 @@ def generar_preset(req: PresetRequest):
 
         cobrar_generacion(req.email, req.hwid)
         return {"status": "ok", "modelo_usado": "orquestador_robusto", "mensaje_limite": "Generación exitosa", "datos": json.dumps(presets_finales)}
-
     except Exception as e:
         return JSONResponse(status_code=200, content={"status": "error", "detail": f"Error interno: {str(e)}"})
 
@@ -298,13 +281,7 @@ async def gumroad_webhook(request: Request):
         
         ID_DEMO = "eqtcpr"
         ID_DEMO_ALT = "eqtpr"
-        
-        # AGREGADO lknbbu JUNTO A knbbu
-        PACKS_LICENCIA = {
-            "knbbu": 20, 
-            "lknbbu": 20,
-            "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000
-        }
+        PACKS_LICENCIA = {"knbbu": 20, "lknbbu": 20, "kwcedd": 100, "xsocpy": 200, "sodyxd": 500, "xzkedi": 1000, "wzzlgq": 5000}
         RECARGAS = {"duahk": 100}
         
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
